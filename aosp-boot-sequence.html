@@ -112,6 +112,128 @@ header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 footer{text-align:center;padding:2rem 1rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
 footer a{color:#60a5fa}
 
+/* ──────────────────────────── Handoff Card ─────────────────────────── */
+.handoff-card{
+  margin-top:1.4rem;
+  width:100%;
+  max-width:100%;
+  overflow:hidden;
+  padding:1.25rem;
+  border-radius:calc(var(--radius) + 6px);
+  border:1px solid rgba(148,163,184,.24);
+  background:
+    radial-gradient(circle at top left, rgba(56,189,248,.16), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(34,197,94,.14), transparent 28%),
+    linear-gradient(145deg, rgba(15,23,42,.96), rgba(30,41,59,.94));
+  box-shadow:var(--shadow);
+  opacity:0;
+  transform:translateY(24px);
+  transition:opacity .7s cubic-bezier(.2,.8,.2,1),transform .7s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease;
+}
+.handoff-card.visible{
+  opacity:1;
+  transform:translateY(0);
+}
+.handoff-card:hover{box-shadow:0 18px 40px rgba(2,6,23,.38)}
+.handoff-header{display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.handoff-title-wrap h2{font-size:1.05rem;font-weight:700;letter-spacing:.01em}
+.handoff-kicker{
+  display:inline-flex;align-items:center;gap:.45rem;
+  margin-bottom:.45rem;padding:.22rem .65rem;border-radius:999px;
+  background:rgba(15,23,42,.65);border:1px solid rgba(96,165,250,.28);
+  color:#bfdbfe;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+}
+.handoff-subtitle{max-width:44rem;color:var(--text-dim);font-size:.82rem;line-height:1.55}
+.handoff-stack{display:grid;gap:1rem}
+.handoff-panel{
+  border-radius:calc(var(--radius) + 2px);
+  border:1px solid rgba(148,163,184,.16);
+  background:rgba(2,6,23,.5);
+  overflow:hidden;
+  padding:1rem;
+}
+.diagram-header{
+  display:flex;justify-content:space-between;align-items:center;gap:.85rem;flex-wrap:wrap;
+  margin-bottom:.8rem;
+}
+.diagram-title{
+  color:#e2e8f0;
+  font-size:1.05rem;
+  font-weight:700;
+  letter-spacing:.01em;
+}
+.diagram-actions{display:flex;gap:.55rem;flex-wrap:wrap}
+.diagram-btn{
+  cursor:pointer;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(15,23,42,.82);
+  color:#dbeafe;
+  padding:.45rem .8rem;
+  border-radius:999px;
+  font-size:.78rem;
+  line-height:1;
+  transition:background .2s ease,border-color .2s ease,transform .2s ease;
+}
+.diagram-btn:hover,.diagram-btn:focus-visible{
+  background:rgba(30,41,59,.96);
+  border-color:rgba(96,165,250,.48);
+  outline:none;
+  transform:translateY(-1px);
+}
+.diagram-body{
+  border-radius:calc(var(--radius) + 1px);
+  background:#060b17;
+  border:1px solid rgba(30,41,59,.95);
+  padding:1rem;
+  overflow:auto;
+}
+.zoom-container{overflow:auto}
+.zoom-inner{
+  width:max-content;
+  transform-origin:top left;
+  transition:transform .2s ease;
+}
+.svg-diagram{
+  display:block;
+  width:900px;
+  min-width:900px;
+  height:auto;
+}
+.diagram-caption{
+  margin-top:.8rem;
+  color:#94a3b8;
+  font-size:.82rem;
+  line-height:1.55;
+}
+.diagram-lead{
+  margin:0 0 .85rem;
+  color:rgba(255,255,255,.85);
+  font-size:.82rem;
+  line-height:1.55;
+}
+.handoff-diagram{
+  border-radius:calc(var(--radius) + 2px);
+  border:1px solid rgba(148,163,184,.16);
+  background:rgba(2,6,23,.58);
+  width:100%;
+  max-width:100%;
+  padding:1rem;
+  overflow:auto;
+  scrollbar-gutter:stable both-edges;
+}
+.handoff-diagram .mermaid{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+.handoff-diagram svg{
+  display:block;
+  width:100% !important;
+  max-width:100% !important;
+  min-width:0 !important;
+  height:auto !important;
+}
+
 /* ──────────────────────────── Print ─────────────────────────────────── */
 @media print{
   .controls,.progress-track,.legend{display:none}
@@ -120,6 +242,20 @@ footer a{color:#60a5fa}
   body{background:#fff;color:#000}
   .block{color:#000!important}
   .block-body{color:#333!important}
+  .handoff-card{opacity:1!important;transform:none!important;background:#fff;border-color:#cbd5e1;box-shadow:none}
+  .handoff-subtitle{color:#475569}
+  .handoff-panel,.handoff-diagram,.diagram-body{background:#fff;border-color:#cbd5e1}
+  .diagram-title{color:#0f172a}
+  .diagram-lead,.diagram-caption{color:#475569}
+}
+
+@media(max-width:700px){
+  .canvas{padding:0 1rem}
+  .handoff-card{padding:1rem}
+  .handoff-header{margin-bottom:.85rem}
+  .handoff-title-wrap h2{font-size:1.05rem}
+  .handoff-subtitle{font-size:.82rem}
+  .svg-diagram{width:900px;min-width:900px}
 }
 </style>
 </head>
@@ -403,6 +539,192 @@ footer a{color:#60a5fa}
     </div>
   </div>
 
+  <section class="handoff-card" id="bootSequenceHandoffCard" aria-labelledby="handoffTitle">
+    <div class="handoff-header">
+      <div class="handoff-title-wrap">
+        <div class="handoff-kicker">Boot Sequence handoff</div>
+        <h2 id="handoffTitle">Hardware to System Server control transfer</h2>
+      </div>
+      <p class="handoff-subtitle">
+        This reference section stays pinned at the bottom of the flow, expands wider than the main timeline, and gives you both the macro boot chain and the detailed handoff sequence in one place.
+      </p>
+    </div>
+    <div class="handoff-stack">
+      <div class="handoff-panel diagram-wrap" id="boot-block-diag">
+        <div class="diagram-header">
+          <span class="diagram-title">Block Diagram — Boot Chain Overview</span>
+          <div class="diagram-actions">
+            <button class="diagram-btn" onclick="downloadSVG('boot-block-svg','boot-block-diagram.svg')" aria-label="Download boot block diagram as SVG">⬇ SVG</button>
+            <button class="diagram-btn" onclick="zoomDiagram('boot-block-zoom', 1.2)" aria-label="Zoom in">＋</button>
+            <button class="diagram-btn" onclick="zoomDiagram('boot-block-zoom', 0.8)" aria-label="Zoom out">－</button>
+            <button class="diagram-btn" onclick="resetZoom('boot-block-zoom')" aria-label="Reset zoom">⊡</button>
+          </div>
+        </div>
+        <p class="diagram-lead">
+          High-level boot chain from ROM through Launcher. This view shows stage ownership and where secure-world, kernel, and Android userspace responsibilities hand off.
+        </p>
+        <div class="diagram-body zoom-container" id="boot-block-zoom-container">
+          <div class="zoom-inner" id="boot-block-zoom">
+            <svg id="boot-block-svg" class="svg-diagram" viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Android boot chain block diagram showing PBL through Launcher">
+              <defs>
+                <linearGradient id="g-amber" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#f5a623;stop-opacity:0.9"/>
+                  <stop offset="100%" style="stop-color:#f5a623;stop-opacity:0.6"/>
+                </linearGradient>
+                <linearGradient id="g-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#4a9eff;stop-opacity:0.9"/>
+                  <stop offset="100%" style="stop-color:#4a9eff;stop-opacity:0.6"/>
+                </linearGradient>
+                <linearGradient id="g-green" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" style="stop-color:#00e5a0;stop-opacity:0.9"/>
+                  <stop offset="100%" style="stop-color:#00e5a0;stop-opacity:0.6"/>
+                </linearGradient>
+                <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#4a9eff"/>
+                </marker>
+              </defs>
+              <rect width="900" height="520" fill="#080c18"/>
+
+              <text x="20" y="30" fill="#5a6a8a" font-family="JetBrains Mono,monospace" font-size="11">HARDWARE PHASE</text>
+              <text x="20" y="200" fill="#5a6a8a" font-family="JetBrains Mono,monospace" font-size="11">BOOTLOADER PHASE</text>
+              <text x="20" y="340" fill="#5a6a8a" font-family="JetBrains Mono,monospace" font-size="11">KERNEL PHASE</text>
+              <text x="20" y="450" fill="#5a6a8a" font-family="JetBrains Mono,monospace" font-size="11">USERSPACE PHASE</text>
+
+              <line x1="15" y1="185" x2="885" y2="185" stroke="#1e2d4a" stroke-width="1" stroke-dasharray="4,4"/>
+              <line x1="15" y1="325" x2="885" y2="325" stroke="#1e2d4a" stroke-width="1" stroke-dasharray="4,4"/>
+              <line x1="15" y1="435" x2="885" y2="435" stroke="#1e2d4a" stroke-width="1" stroke-dasharray="4,4"/>
+
+              <rect x="40" y="40" width="120" height="60" rx="8" fill="url(#g-amber)" opacity="0.15" stroke="#f5a623" stroke-width="1.5"/>
+              <text x="100" y="65" text-anchor="middle" fill="#f5a623" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">PBL</text>
+              <text x="100" y="82" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">Primary Bootloader</text>
+              <text x="100" y="95" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">(ROM — Immutable)</text>
+
+              <rect x="220" y="40" width="120" height="60" rx="8" fill="url(#g-amber)" opacity="0.12" stroke="#f5a623" stroke-width="1.5" stroke-dasharray="none"/>
+              <text x="280" y="65" text-anchor="middle" fill="#f5a623" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">XBL</text>
+              <text x="280" y="82" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">eXtensible Bootloader</text>
+              <text x="280" y="95" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">(UEFI-based)</text>
+
+              <rect x="400" y="40" width="120" height="60" rx="8" fill="url(#g-amber)" opacity="0.10" stroke="#f5a623" stroke-width="1.5"/>
+              <text x="460" y="65" text-anchor="middle" fill="#f5a623" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">ABL</text>
+              <text x="460" y="82" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">Android Bootloader</text>
+              <text x="460" y="95" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">(abl.elf)</text>
+
+              <rect x="580" y="40" width="120" height="60" rx="8" fill="rgba(176,110,251,0.1)" stroke="#b06efb" stroke-width="1.5"/>
+              <text x="640" y="65" text-anchor="middle" fill="#b06efb" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">AVB</text>
+              <text x="640" y="82" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">Verified Boot 2.0</text>
+              <text x="640" y="95" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">(vbmeta + dm-verity)</text>
+
+              <line x1="160" y1="70" x2="218" y2="70" stroke="#4a9eff" stroke-width="1.5" marker-end="url(#arr)"/>
+              <line x1="340" y1="70" x2="398" y2="70" stroke="#4a9eff" stroke-width="1.5" marker-end="url(#arr)"/>
+              <line x1="520" y1="70" x2="578" y2="70" stroke="#4a9eff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+              <rect x="40" y="200" width="160" height="70" rx="8" fill="rgba(74,158,255,0.08)" stroke="#4a9eff" stroke-width="1.5"/>
+              <text x="120" y="225" text-anchor="middle" fill="#4a9eff" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">Linux Kernel</text>
+              <text x="120" y="242" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">GKI (boot partition)</text>
+              <text x="120" y="257" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">EL1 — ARM Cortex-A</text>
+
+              <rect x="240" y="200" width="140" height="70" rx="8" fill="rgba(74,158,255,0.06)" stroke="#4a9eff" stroke-width="1" stroke-dasharray="4,2"/>
+              <text x="310" y="225" text-anchor="middle" fill="#4a9eff" font-family="JetBrains Mono,monospace" font-size="11">Ramdisk / tmpfs</text>
+              <text x="310" y="242" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">populate_rootfs()</text>
+              <text x="310" y="257" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">cpio archive → RAM</text>
+
+              <rect x="420" y="200" width="140" height="70" rx="8" fill="rgba(74,158,255,0.06)" stroke="#4a9eff" stroke-width="1" stroke-dasharray="4,2"/>
+              <text x="490" y="225" text-anchor="middle" fill="#4a9eff" font-family="JetBrains Mono,monospace" font-size="11">Device Tree</text>
+              <text x="490" y="242" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">DTB + DTBO merge</text>
+              <text x="490" y="257" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">HW description</text>
+
+              <rect x="600" y="200" width="140" height="70" rx="8" fill="rgba(176,110,251,0.06)" stroke="#b06efb" stroke-width="1" stroke-dasharray="4,2"/>
+              <text x="670" y="225" text-anchor="middle" fill="#b06efb" font-family="JetBrains Mono,monospace" font-size="11">TrustZone / QSEE</text>
+              <text x="670" y="242" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">Secure World EL3</text>
+              <text x="670" y="257" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">RPMB, KeyMint, DRM</text>
+
+              <line x1="460" y1="100" x2="460" y2="170" stroke="#4a9eff" stroke-width="1" stroke-dasharray="3,3"/>
+              <line x1="460" y1="170" x2="120" y2="198" stroke="#4a9eff" stroke-width="1.5" marker-end="url(#arr)"/>
+
+              <rect x="40" y="340" width="200" height="60" rx="8" fill="rgba(0,229,160,0.08)" stroke="#00e5a0" stroke-width="1.5"/>
+              <text x="140" y="365" text-anchor="middle" fill="#00e5a0" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">First Stage Init</text>
+              <text x="140" y="382" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">/init (ramdisk) — PID 1</text>
+              <text x="140" y="394" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">mounts /system /vendor /odm</text>
+
+              <rect x="280" y="340" width="200" height="60" rx="8" fill="rgba(0,229,160,0.06)" stroke="#00e5a0" stroke-width="1" stroke-dasharray="4,2"/>
+              <text x="380" y="365" text-anchor="middle" fill="#00e5a0" font-family="JetBrains Mono,monospace" font-size="12" font-weight="bold">Second Stage Init</text>
+              <text x="380" y="382" text-anchor="middle" fill="#a0aec0" font-family="Outfit,sans-serif" font-size="10">/system/bin/init</text>
+              <text x="380" y="394" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">SELinux + init.rc services</text>
+
+              <line x1="120" y1="270" x2="120" y2="338" stroke="#00e5a0" stroke-width="1.5" marker-end="url(#arr)"/>
+              <line x1="240" y1="370" x2="278" y2="370" stroke="#00e5a0" stroke-width="1.5" marker-end="url(#arr)"/>
+
+              <rect x="40" y="450" width="150" height="50" rx="8" fill="rgba(0,229,160,0.06)" stroke="#00e5a0" stroke-width="1"/>
+              <text x="115" y="473" text-anchor="middle" fill="#00e5a0" font-family="JetBrains Mono,monospace" font-size="11">Zygote</text>
+              <text x="115" y="490" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">ART preload + fork source</text>
+
+              <rect x="220" y="450" width="150" height="50" rx="8" fill="rgba(0,229,160,0.06)" stroke="#00e5a0" stroke-width="1"/>
+              <text x="295" y="473" text-anchor="middle" fill="#00e5a0" font-family="JetBrains Mono,monospace" font-size="11">System Server</text>
+              <text x="295" y="490" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">AMS, WMS, PMS, etc.</text>
+
+              <rect x="400" y="450" width="150" height="50" rx="8" fill="rgba(74,158,255,0.08)" stroke="#4a9eff" stroke-width="1.5"/>
+              <text x="475" y="473" text-anchor="middle" fill="#4a9eff" font-family="JetBrains Mono,monospace" font-size="11" font-weight="bold">Launcher</text>
+              <text x="475" y="490" text-anchor="middle" fill="#5a6a8a" font-family="Outfit,sans-serif" font-size="9">Boot Complete ✓</text>
+
+              <line x1="380" y1="400" x2="380" y2="430" stroke="#00e5a0" stroke-width="1" stroke-dasharray="3,3"/>
+              <line x1="380" y1="430" x2="115" y2="448" stroke="#00e5a0" stroke-width="1.5" marker-end="url(#arr)"/>
+              <line x1="190" y1="475" x2="218" y2="475" stroke="#00e5a0" stroke-width="1.5" marker-end="url(#arr)"/>
+              <line x1="370" y1="475" x2="398" y2="475" stroke="#4a9eff" stroke-width="1.5" marker-end="url(#arr)"/>
+            </svg>
+          </div>
+        </div>
+        <p class="diagram-caption" role="note">
+          Fig 1.1 — Boot chain block diagram. Amber = Qualcomm bootloader stages. Blue = kernel subsystem. Green = Android userspace. Purple = secure world.
+        </p>
+      </div>
+
+      <div class="handoff-panel sequence-panel">
+        <div class="diagram-header">
+          <span class="diagram-title">Sequence Diagram — Boot Sequence Handoff</span>
+        </div>
+        <p class="diagram-lead">
+          Detailed execution handoff from hardware reset through <code>ACTION_BOOT_COMPLETED</code>. The sequence panel is intentionally larger so actor names, notes, and transitions stay readable without cramped labels.
+        </p>
+        <div class="handoff-diagram" aria-label="Mermaid sequence diagram showing the boot handoff from hardware to system server">
+          <div class="mermaid">
+sequenceDiagram
+    participant HW as Hardware (eFuse/ROM)
+    participant PBL as PBL (ROM)
+    participant XBL as XBL (UEFI)
+    participant ABL as ABL
+    participant K as Linux Kernel
+    participant FS1 as First Stage Init
+    participant FS2 as Second Stage Init
+    participant ZYG as Zygote
+    participant SS as System Server
+
+    HW->>PBL: Power ON - CPU reset vector
+    Note over PBL: Validates XBL signature vs eFuse key
+    PBL->>XBL: Authenticate + Load XBL
+    Note over XBL: DDR init, TrustZone, AOP firmware
+    XBL->>ABL: Load ABL, verify signature
+    Note over ABL: Read BCB from misc, check AVB, read DTBO
+    ABL->>K: Load boot.img kernel + merged ramdisk
+    Note over K: populate_rootfs() - cpio to tmpfs
+    K->>FS1: exec("/init") - PID 1
+    Note over FS1: Mount /dev /proc /sys
+    FS1->>FS1: dm-linear to AVB to dm-verity
+    FS1->>FS1: mount /system /vendor /odm
+    FS1->>FS2: execv("/system/bin/init","selinux_setup")
+    Note over FS2: Load SELinux policy
+    FS2->>FS2: execv("/system/bin/init","second_stage")
+    FS2->>FS2: Parse init.rc - start daemons
+    FS2->>ZYG: Start Zygote service
+    Note over ZYG: Preload ART + framework classes
+    ZYG->>SS: forkSystemServer()
+    Note over SS: Start AMS, WMS, PMS, etc.
+    SS->>SS: Broadcast ACTION_BOOT_COMPLETED
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer>
@@ -411,6 +733,7 @@ footer a{color:#60a5fa}
 </footer>
 
 <!-- ═══════════════════════════ JAVASCRIPT ════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -421,6 +744,7 @@ const arrows = Array.from(document.querySelectorAll('.arrow-container[data-step]
 const branch = document.querySelector('.branch[data-step]');
 const progressBar = document.getElementById('progressBar');
 const stepCounter = document.getElementById('stepCounter');
+const handoffCard = document.getElementById('bootSequenceHandoffCard');
 
 /* Unique ordered steps */
 const stepSet = new Set();
@@ -603,6 +927,102 @@ blocks.forEach(b => {
   }
 })();
 
+/* ── Mermaid handoff card ── */
+window.zoomDiagram = function(id, factor){
+  const target = document.getElementById(id);
+  if(!target) return;
+  const nextScale = Math.max(0.7, Math.min(2.4, (parseFloat(target.dataset.scale || '1') * factor)));
+  target.dataset.scale = String(nextScale);
+  target.style.transform = 'scale(' + nextScale + ')';
+};
+
+window.resetZoom = function(id){
+  const target = document.getElementById(id);
+  if(!target) return;
+  target.dataset.scale = '1';
+  target.style.transform = 'scale(1)';
+};
+
+window.downloadSVG = function(svgId, filename){
+  const svg = document.getElementById(svgId);
+  if(!svg) return;
+  const serializer = new XMLSerializer();
+  const source = serializer.serializeToString(svg);
+  const blob = new Blob([source], {type:'image/svg+xml;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+if(window.mermaid){
+  window.mermaid.initialize({
+    startOnLoad:false,
+    theme:'base',
+    sequence:{
+      actorMargin:36,
+      boxMargin:8,
+      boxTextMargin:6,
+      diagramMarginX:10,
+      diagramMarginY:12,
+      messageMargin:16,
+      noteMargin:10,
+      useMaxWidth:true
+    },
+    themeVariables:{
+      background:'#020617',
+      fontSize:'15px',
+      primaryColor:'#0f172a',
+      primaryBorderColor:'#38bdf8',
+      primaryTextColor:'#e2e8f0',
+      lineColor:'#94a3b8',
+      secondaryColor:'#172554',
+      secondaryBorderColor:'#60a5fa',
+      secondaryTextColor:'#dbeafe',
+      tertiaryColor:'#14532d',
+      tertiaryBorderColor:'#4ade80',
+      tertiaryTextColor:'#dcfce7',
+      actorBkg:'#0f172a',
+      actorBorder:'#38bdf8',
+      actorTextColor:'#e2e8f0',
+      actorLineColor:'#64748b',
+      signalColor:'#e2e8f0',
+      signalTextColor:'#e2e8f0',
+      labelBoxBkgColor:'#0f172a',
+      labelBoxBorderColor:'#475569',
+      labelTextColor:'#e2e8f0',
+      noteBkgColor:'#172554',
+      noteBorderColor:'#60a5fa',
+      noteTextColor:'#dbeafe',
+      sequenceNumberColor:'#e2e8f0'
+    }
+  });
+  window.mermaid.run({querySelector:'#bootSequenceHandoffCard .mermaid'});
+}
+
+if(handoffCard){
+  const revealHandoff = entries => {
+    entries.forEach(entry => {
+      if(!entry.isIntersecting) return;
+      handoffCard.classList.add('visible');
+    });
+  };
+
+  if('IntersectionObserver' in window){
+    const observer = new IntersectionObserver(revealHandoff, {
+      threshold:0.2,
+      rootMargin:'0px 0px -8% 0px'
+    });
+    observer.observe(handoffCard);
+  } else {
+    handoffCard.classList.add('visible');
+  }
+}
+
 /* Init counter */
 stepCounter.textContent = '0 / '+TOTAL;
 
@@ -610,4 +1030,3 @@ stepCounter.textContent = '0 / '+TOTAL;
 </script>
 </body>
 </html>
-
