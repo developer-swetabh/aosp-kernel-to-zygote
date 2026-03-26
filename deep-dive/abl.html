@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — ABL (Android Bootloader)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#2e7d32;--accent-light:#66bb6a;--accent-bg:rgba(46,125,50,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+
+/* Navigation */
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3);border-color:rgba(255,255,255,.2)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}
+.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+
+/* Header */
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+
+/* Content */
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+
+/* Overview bullets */
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+
+/* Steps */
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+
+/* Files table */
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.file-icon{margin-right:.3rem}
+
+/* Failure cards */
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}
+.fail-card.warn h4{color:#ffa726}
+
+/* Vendor specifics */
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+
+/* SVG Canvas */
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.svg-canvas text{fill:var(--text);font-family:'Segoe UI',system-ui,sans-serif}
+
+/* Code snippets */
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+
+/* References */
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}
+.ref-list a:hover{text-decoration:underline}
+
+/* Animation controls */
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0;flex-wrap:wrap}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.anim-controls button.active{background:#2563eb;border-color:#3b82f6}
+
+/* Prev/Next nav */
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+.page-nav .disabled{opacity:.3;pointer-events:none}
+
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../aosp-boot-sequence.html#abl" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>ABL</strong></span>
+  <div class="nav-right">
+    <button onclick="toggleHC()" aria-label="Toggle high contrast" title="High contrast (H)">◑ Contrast</button>
+  </div>
+</nav>
+
+<!-- Header -->
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🔐 ABL — Android Bootloader</h1>
+  <p class="summary">The first software stage after SoC ROM — verifies boot integrity, selects the active slot, and loads the kernel.</p>
+</header>
+
+<main class="content" role="main">
+
+  <!-- Overview -->
+  <section class="section" aria-label="Overview">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Purpose:</strong> Bridge between SoC ROM and the Linux kernel — the last vendor-controlled boot stage before AOSP code runs.</li>
+      <li><strong>Key responsibility:</strong> Verify the boot chain using Android Verified Boot (AVB) signatures stored in <code>vbmeta</code>.</li>
+      <li><strong>Output:</strong> Loads the kernel + ramdisk into memory and transfers control by jumping to the kernel entry point.</li>
+    </ul>
+  </section>
+
+  <!-- How It Works -->
+  <section class="section" aria-label="How it works">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()" aria-label="Play steps">▶ Play</button>
+      <button onclick="animReset()" aria-label="Reset steps">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Power-On Reset (POR)</h3>
+        <p>SoC hardware executes immutable ROM code (PBL — Primary Boot Loader). PBL loads the SoC-specific bootloader chain (e.g., Qualcomm: PBL → SBL → XBL → ABL).</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Load ABL from Boot Partition</h3>
+        <p>ABL binary is read from the <code>abl</code> partition (or embedded in XBL on some SoCs). It initializes display, USB, and storage drivers needed for the next stages.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Read and Verify vbmeta</h3>
+        <p>ABL reads <code>vbmeta.img</code> from the <code>vbmeta</code> partition. It verifies the RSA-4096 or RSA-2048 signature against an embedded root-of-trust public key. If the signature is invalid, boot is halted (locked device) or a warning is shown (unlocked device).</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>A/B Slot Selection</h3>
+        <p>Reads boot control metadata from the <code>misc</code> partition. Evaluates <code>active</code>, <code>bootable</code>, <code>successful_boot</code>, and <code>retry_count</code> flags for each slot (A/B). Selects the highest-priority bootable slot.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <h3>Load Kernel + Ramdisk</h3>
+        <p>Reads the <code>boot.img</code> (or <code>init_boot.img</code> since Android 13) from the selected slot. Decompresses the kernel image and initial ramdisk into RAM. Sets up kernel command-line parameters (<code>androidboot.*</code>) and jumps to the kernel entry point.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: Boot Chain -->
+  <section class="section" aria-label="Boot chain diagram">
+    <h2><span class="s-icon">🔗</span> Boot Chain Verification Flow</h2>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 280" width="800" height="280" role="img" aria-label="ABL boot chain verification flow diagram">
+        <!-- SoC ROM -->
+        <rect x="20" y="30" width="140" height="60" rx="8" fill="#1b5e20" stroke="#43a047" stroke-width="2"/>
+        <text x="90" y="55" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">SoC ROM (PBL)</text>
+        <text x="90" y="72" text-anchor="middle" font-size="10" fill="#a5d6a7">Immutable · HW root of trust</text>
+        <!-- Arrow 1 -->
+        <line x1="160" y1="60" x2="210" y2="60" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowG)"/>
+        <text x="185" y="52" text-anchor="middle" font-size="9" fill="#94a3b8">loads</text>
+        <!-- XBL/SBL -->
+        <rect x="210" y="30" width="130" height="60" rx="8" fill="#2e7d32" stroke="#43a047" stroke-width="2"/>
+        <text x="275" y="55" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">XBL / SBL</text>
+        <text x="275" y="72" text-anchor="middle" font-size="10" fill="#a5d6a7">SoC vendor stage</text>
+        <!-- Arrow 2 -->
+        <line x1="340" y1="60" x2="390" y2="60" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowG)"/>
+        <text x="365" y="52" text-anchor="middle" font-size="9" fill="#94a3b8">loads</text>
+        <!-- ABL -->
+        <rect x="390" y="20" width="160" height="80" rx="8" fill="#388e3c" stroke="#66bb6a" stroke-width="3" id="svgAbl">
+          <animate attributeName="stroke-opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="470" y="48" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">ABL</text>
+        <text x="470" y="65" text-anchor="middle" font-size="10" fill="#c8e6c9">Android Bootloader</text>
+        <text x="470" y="80" text-anchor="middle" font-size="9" fill="#a5d6a7">Verify vbmeta · Select slot</text>
+        <!-- Arrow 3 -->
+        <line x1="550" y1="60" x2="610" y2="60" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrowG)"/>
+        <text x="580" y="52" text-anchor="middle" font-size="9" fill="#94a3b8">jumps to</text>
+        <!-- Kernel -->
+        <rect x="610" y="30" width="160" height="60" rx="8" fill="#c62828" stroke="#e53935" stroke-width="2"/>
+        <text x="690" y="55" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">Linux Kernel</text>
+        <text x="690" y="72" text-anchor="middle" font-size="10" fill="#ef9a9a">Next stage →</text>
+
+        <!-- vbmeta verification path -->
+        <rect x="350" y="140" width="240" height="50" rx="8" fill="rgba(230,81,0,.2)" stroke="#fb8c00" stroke-width="1.5" stroke-dasharray="4"/>
+        <text x="470" y="162" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">🛡️ vbmeta verification</text>
+        <text x="470" y="178" text-anchor="middle" font-size="9" fill="#ffcc80">RSA-4096 / SHA-256 signature check</text>
+        <line x1="470" y1="100" x2="470" y2="140" stroke="#ffa726" stroke-width="1.5" stroke-dasharray="3" marker-end="url(#arrowO)"/>
+
+        <!-- misc partition -->
+        <rect x="80" y="160" width="200" height="45" rx="8" fill="rgba(21,101,192,.15)" stroke="#1e88e5" stroke-width="1.5" stroke-dasharray="4"/>
+        <text x="180" y="180" text-anchor="middle" font-size="11" font-weight="600" fill="#42a5f5">🔀 misc partition (slot metadata)</text>
+        <text x="180" y="195" text-anchor="middle" font-size="9" fill="#90caf9">active · bootable · retry_count</text>
+        <line x1="390" y1="90" x2="280" y2="160" stroke="#42a5f5" stroke-width="1" stroke-dasharray="3"/>
+
+        <!-- Locked/Unlocked branch -->
+        <rect x="350" y="220" width="110" height="35" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1"/>
+        <text x="405" y="242" text-anchor="middle" font-size="10" fill="#81c784">✅ Locked: boot</text>
+        <rect x="490" y="220" width="110" height="35" rx="6" fill="rgba(239,83,80,.2)" stroke="#ef5350" stroke-width="1"/>
+        <text x="545" y="237" text-anchor="middle" font-size="10" fill="#ef9a9a">❌ Fail: halt /</text>
+        <text x="545" y="250" text-anchor="middle" font-size="9" fill="#ef9a9a">recovery</text>
+        <line x1="430" y1="190" x2="405" y2="220" stroke="#66bb6a" stroke-width="1"/>
+        <line x1="510" y1="190" x2="545" y2="220" stroke="#ef5350" stroke-width="1"/>
+
+        <defs>
+          <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+          </marker>
+          <marker id="arrowO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#ffa726"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <!-- Key Files & Artifacts -->
+  <section class="section" aria-label="Key files and artifacts">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File / Artifact</th><th>Location</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><span class="file-icon">🛡️</span> <code>vbmeta.img</code></td><td><code>vbmeta</code> partition</td><td>Signed metadata containing hash descriptors for all verified partitions</td></tr>
+        <tr><td><span class="file-icon">📦</span> <code>boot.img</code></td><td><code>boot_a</code> / <code>boot_b</code></td><td>Kernel + ramdisk image (pre-Android 13 includes generic ramdisk)</td></tr>
+        <tr><td><span class="file-icon">📦</span> <code>init_boot.img</code></td><td><code>init_boot_a/b</code></td><td>Generic ramdisk (Android 13+, separated from boot.img)</td></tr>
+        <tr><td><span class="file-icon">⚙️</span> <code>misc</code></td><td><code>misc</code> partition</td><td>Boot control metadata: active slot, boot attempts, success flags</td></tr>
+        <tr><td><span class="file-icon">🔑</span> Root-of-trust key</td><td>Fused in SoC OTP</td><td>Public key burned into hardware; cannot be changed after manufacture</td></tr>
+        <tr><td><span class="file-icon">📝</span> <code>/proc/last_kmsg</code></td><td>Kernel pseudo-fs</td><td>Last kernel log — includes bootloader messages for debugging</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Failure Modes -->
+  <section class="section" aria-label="Common checks and failure modes">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 vbmeta Signature Invalid</h4>
+        <p>On <strong>locked</strong> devices: boot halts, device shows red warning screen. On <strong>unlocked</strong> devices: yellow warning shown, boot continues.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🚫 Both Slots Unbootable</h4>
+        <p>If both A and B slots are marked unbootable (retry_count exhausted), device enters recovery/fastboot mode.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Rollback Protection Triggered</h4>
+        <p>AVB rollback index in vbmeta is lower than the stored minimum — prevents downgrade attacks. Boot is refused.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ boot.img Hash Mismatch</h4>
+        <p>The hash of the loaded boot image doesn't match the descriptor in vbmeta. Indicates corruption or tampering.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vendor Specifics -->
+  <section class="section" aria-label="Vendor-specific details">
+    <h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
+    <details>
+      <summary>🔧 Qualcomm (XBL → ABL chain)</summary>
+      <div class="details-body">
+        <p>Qualcomm SoCs use a multi-stage bootloader: <strong>PBL → SBL1 → XBL (UEFI) → ABL</strong>. XBL initializes DDR, clocks, and storage. ABL runs as a UEFI application within XBL's environment.</p>
+        <p>Key partitions: <code>xbl</code>, <code>xbl_config</code>, <code>abl</code>, <code>devcfg</code>.</p>
+        <p>ABL source: <code>bootable/bootloader/edk2</code> in Qualcomm BSP, built as a UEFI DXE driver.</p>
+      </div>
+    </details>
+    <details>
+      <summary>🔧 MediaTek (preloader → LK)</summary>
+      <div class="details-body">
+        <p>MediaTek uses <strong>preloader → LK (Little Kernel)</strong>. The preloader initializes DRAM and loads LK, which acts as the Android bootloader.</p>
+        <p>LK handles AVB verification and slot selection similarly to ABL on Qualcomm.</p>
+      </div>
+    </details>
+    <details>
+      <summary>🔧 Google Tensor</summary>
+      <div class="details-body">
+        <p>Tensor SoCs (Pixel 6+) use a custom bootloader chain based on Samsung Exynos firmware. The ABL equivalent handles AVB and slot selection in a proprietary binary.</p>
+      </div>
+    </details>
+  </section>
+
+  <!-- Code Snippets -->
+  <section class="section" aria-label="Code snippets">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)" aria-label="Copy code">📋 Copy</button>
+      <pre><code># Verify vbmeta signature using avbtool
+avbtool verify_image --image vbmeta.img --key /path/to/root_key.pem
+
+# Extract vbmeta info (hash descriptors, flags, rollback index)
+avbtool info_image --image vbmeta.img
+
+# Check A/B slot status via fastboot
+fastboot getvar current-slot
+fastboot getvar slot-retry-count:a
+fastboot getvar slot-successful:a
+fastboot getvar slot-unbootable:a</code></pre>
+    </div>
+    <div class="code-block">
+      <span class="lang-tag">text</span>
+      <button class="copy-btn" onclick="copyCode(this)" aria-label="Copy code">📋 Copy</button>
+      <pre><code># Example kernel command line set by ABL:
+androidboot.verifiedbootstate=green
+androidboot.slot_suffix=_a
+androidboot.vbmeta.device_state=locked
+androidboot.vbmeta.hash_alg=sha256
+androidboot.vbmeta.size=8192
+androidboot.vbmeta.invalidate_on_error=yes</code></pre>
+    </div>
+  </section>
+
+  <!-- References -->
+  <section class="section" aria-label="References">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/bootloader" target="_blank" rel="noopener">AOSP — Bootloader Overview</a></li>
+      <li>📄 <a href="https://source.android.com/docs/security/features/verifiedboot" target="_blank" rel="noopener">AOSP — Verified Boot</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">AOSP — A/B System Updates</a></li>
+      <li>📄 <a href="https://android.googlesource.com/platform/external/avb/+/refs/heads/main/README.md" target="_blank" rel="noopener">AVB README (avbtool documentation)</a></li>
+    </ul>
+  </section>
+
+</main>
+
+<!-- Page Navigation -->
+<nav class="page-nav" aria-label="Page navigation">
+  <a class="disabled" aria-disabled="true">← Previous</a>
+  <a href="kernel.html">Next: Linux Kernel →</a>
+</nav>
+
+<footer>
+  <p>AOSP Boot Sequence — Deep Dive · <a href="../aosp-boot-sequence.html">Back to Overview</a></p>
+</footer>
+
+<script>
+(function(){
+"use strict";
+
+/* Step animation */
+const steps = Array.from(document.querySelectorAll('.step-item'));
+let stepIdx = -1, playing = false, timer = null;
+
+function showStep(i){ if(i>=0&&i<steps.length) steps[i].classList.add('visible'); }
+function hideStep(i){ if(i>=0&&i<steps.length) steps[i].classList.remove('visible'); }
+
+window.animPlay = function(){
+  if(playing) return; playing = true;
+  (function tick(){
+    if(!playing) return;
+    if(stepIdx >= steps.length-1){ playing=false; return; }
+    stepIdx++; showStep(stepIdx);
+    timer = setTimeout(tick, 800);
+  })();
+};
+
+window.animReset = function(){
+  playing = false; clearTimeout(timer);
+  steps.forEach((_,i) => hideStep(i));
+  stepIdx = -1;
+};
+
+/* Auto-play on scroll into view */
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting && stepIdx < 0){ animPlay(); obs.disconnect(); }});
+}, {threshold:0.3});
+const flow = document.getElementById('stepFlow');
+if(flow) obs.observe(flow);
+
+/* High contrast */
+window.toggleHC = function(){ document.body.classList.toggle('hc'); };
+
+/* Copy code */
+window.copyCode = function(btn){
+  const pre = btn.parentElement.querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 1500);
+  });
+};
+
+/* Keyboard */
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape') window.location.href = '../aosp-boot-sequence.html#abl';
+  if(e.key === 'h' || e.key === 'H') toggleHC();
+});
+
+})();
+</script>
+</body>
+</html>
+

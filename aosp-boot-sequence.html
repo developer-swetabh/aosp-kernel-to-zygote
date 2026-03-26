@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AOSP Boot Sequence — ABL to Zygote</title>
+<style>
+/* ──────────────────────────── Reset & Base ──────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* Palette */
+  --c-abl:#2e7d32;--c-abl-bg:#e8f5e9;--c-abl-border:#43a047;
+  --c-kernel:#c62828;--c-kernel-bg:#ffebee;--c-kernel-border:#e53935;
+  --c-avb:#e65100;--c-avb-bg:#fff3e0;--c-avb-border:#fb8c00;
+  --c-mount:#1565c0;--c-mount-bg:#e3f2fd;--c-mount-border:#1e88e5;
+  --c-sep:#6a1b9a;--c-sep-bg:#f3e5f5;--c-sep-border:#8e24aa;
+  --c-svc:#00695c;--c-svc-bg:#e0f2f1;--c-svc-border:#00897b;
+  --c-init:#ef6c00;--c-init-bg:#fff8e1;--c-init-border:#ffa726;
+  --c-fail:#b71c1c;--c-fail-bg:#ffcdd2;--c-fail-border:#e53935;
+  /* UI */
+  --bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text-dim:#94a3b8;
+  --radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4);
+}
+html{font-size:15px;scroll-behavior:smooth}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ──────────────────────────── High-contrast toggle ──────────────────── */
+body.hc{--bg:#000;--bg2:#111;--text:#fff;--text-dim:#ccc}
+body.hc .block{border-width:3px!important}
+body.hc .block-title{font-weight:800!important}
+
+/* ──────────────────────────── Header ────────────────────────────────── */
+header{text-align:center;padding:2rem 1rem 1rem;position:relative;z-index:10}
+header h1{font-size:1.8rem;font-weight:700;letter-spacing:.02em}
+header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+
+/* ──────────────────────────── Controls ──────────────────────────────── */
+.controls{display:flex;justify-content:center;gap:.6rem;flex-wrap:wrap;padding:.8rem 1rem;position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid rgba(255,255,255,.08)}
+.controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.45rem 1rem;border-radius:6px;font-size:.85rem;transition:all .15s}
+.controls button:hover,.controls button:focus-visible{background:#334155;outline:none;border-color:rgba(255,255,255,.3)}
+.controls button.active{background:#2563eb;border-color:#3b82f6}
+.controls .speed-group{display:flex;align-items:center;gap:.3rem;margin-left:.6rem}
+.controls .speed-group label{font-size:.8rem;color:var(--text-dim)}
+.controls .speed-group input[type=range]{width:80px;accent-color:#3b82f6}
+.step-counter{font-size:.8rem;color:var(--text-dim);margin-left:.8rem;align-self:center;min-width:80px;text-align:center}
+
+/* ──────────────────────────── Legend ────────────────────────────────── */
+.legend{display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;padding:.6rem 1rem;font-size:.75rem;color:var(--text-dim)}
+.legend-item{display:flex;align-items:center;gap:.3rem}
+.legend-swatch{width:14px;height:14px;border-radius:3px}
+
+/* ──────────────────────────── Canvas ────────────────────────────────── */
+.canvas{position:relative;max-width:960px;margin:1rem auto 3rem;padding:0 1.5rem}
+
+/* ──────────────────────────── Blocks ────────────────────────────────── */
+.block{
+  position:relative;border-radius:var(--radius);padding:1rem 1.2rem;
+  border:2px solid;margin-bottom:0;
+  opacity:0;transform:translateY(24px) scale(.97);
+  transition:opacity .5s cubic-bezier(.4,0,.2,1),transform .5s cubic-bezier(.4,0,.2,1),box-shadow .3s;
+  cursor:default;
+}
+.block[data-deepdive]{cursor:pointer}
+.block[data-deepdive]:hover{filter:brightness(1.12)}
+.block.visible{opacity:1;transform:translateY(0) scale(1)}
+.block.active{box-shadow:0 0 0 3px rgba(255,255,255,.25),var(--shadow);transform:scale(1.015)}
+.block:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
+.block-title{font-weight:700;font-size:1.05rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem}
+.block-title .icon{font-size:1.1rem}
+.block-body{font-size:.82rem;line-height:1.5;color:rgba(255,255,255,.85)}
+.block-body li{margin-left:1rem;list-style:disc}
+.block-callout{display:inline-block;background:rgba(0,0,0,.2);border-radius:4px;padding:.1rem .4rem;font-family:'Fira Code',monospace;font-size:.75rem;margin-top:.25rem}
+.dive-hint{position:absolute;top:.6rem;right:.8rem;font-size:.65rem;opacity:.7;background:rgba(0,0,0,.25);padding:.15rem .5rem;border-radius:4px;pointer-events:none;transition:opacity .2s}
+.block[data-deepdive]:hover .dive-hint{opacity:1}
+
+/* Color variants */
+.block.abl{background:var(--c-abl);border-color:var(--c-abl-border);color:#fff}
+.block.kernel{background:var(--c-kernel);border-color:var(--c-kernel-border);color:#fff}
+.block.init{background:var(--c-init);border-color:var(--c-init-border);color:#fff}
+.block.avb{background:var(--c-avb);border-color:var(--c-avb-border);color:#fff}
+.block.mount{background:var(--c-mount);border-color:var(--c-mount-border);color:#fff}
+.block.sep{background:var(--c-sep);border-color:var(--c-sep-border);color:#fff}
+.block.svc{background:var(--c-svc);border-color:var(--c-svc-border);color:#fff}
+.block.fail{background:var(--c-fail);border-color:var(--c-fail-border);color:#fff}
+
+/* ──────────────────────────── Arrows / connectors ───────────────────── */
+.arrow-container{display:flex;justify-content:center;align-items:center;height:48px;position:relative;opacity:0;transition:opacity .4s}
+.arrow-container.visible{opacity:1}
+.arrow-shaft{width:3px;height:28px;background:var(--text-dim);position:relative}
+.arrow-shaft::after{content:'';position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--text-dim)}
+.arrow-label{position:absolute;right:calc(50% + 24px);font-size:.7rem;color:var(--text-dim);white-space:nowrap;background:var(--bg);padding:0 .4rem;border-radius:3px}
+.arrow-shaft.animated{animation:arrow-pulse .6s ease-out}
+@keyframes arrow-pulse{0%{background:#60a5fa;transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1.1)}100%{background:var(--text-dim);transform:scaleY(1)}}
+
+/* ──────────────────────────── Branch ────────────────────────────────── */
+.branch{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-bottom:0}
+.branch-label{text-align:center;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:.2rem 0}
+.branch-label.pass{color:#66bb6a}
+.branch-label.failb{color:#ef5350}
+
+/* ──────────────────────────── Progress bar ──────────────────────────── */
+.progress-track{position:fixed;top:0;left:0;height:3px;width:100%;z-index:200;background:rgba(255,255,255,.05)}
+.progress-bar{height:100%;background:linear-gradient(90deg,#2e7d32,#c62828,#e65100,#1565c0,#6a1b9a,#00695c);width:0;transition:width .4s}
+
+/* ──────────────────────────── Tooltip ───────────────────────────────── */
+.tooltip{position:absolute;top:0;right:-12px;transform:translateX(100%);background:#1e293b;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:.8rem 1rem;font-size:.78rem;color:var(--text);width:260px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s;box-shadow:var(--shadow);line-height:1.55}
+.block:hover .tooltip,.block:focus .tooltip{opacity:1;pointer-events:auto}
+.tooltip strong{color:#93c5fd;display:block;margin-bottom:.25rem}
+@media(max-width:900px){.tooltip{right:auto;left:0;top:100%;transform:none;width:100%;margin-top:.4rem}}
+
+/* ──────────────────────────── Footer ────────────────────────────────── */
+footer{text-align:center;padding:2rem 1rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+
+/* ──────────────────────────── Print ─────────────────────────────────── */
+@media print{
+  .controls,.progress-track,.legend{display:none}
+  .block{opacity:1!important;transform:none!important;break-inside:avoid}
+  .arrow-container{opacity:1!important}
+  body{background:#fff;color:#000}
+  .block{color:#000!important}
+  .block-body{color:#333!important}
+}
+</style>
+</head>
+<body>
+
+<!-- Progress Bar -->
+<div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+
+<header>
+  <h1>🔄 AOSP Boot Sequence — ABL&nbsp;→&nbsp;Zygote</h1>
+  <p>Animated call-flow block diagram &middot; Android Open Source Project</p>
+</header>
+
+<!-- Controls -->
+<nav class="controls" role="toolbar" aria-label="Animation controls">
+  <button id="btnPlay" onclick="play()" aria-label="Play animation" title="Play (Space)">▶ Play</button>
+  <button id="btnPause" onclick="pause()" aria-label="Pause animation" title="Pause (Space)">⏸ Pause</button>
+  <button id="btnReset" onclick="reset()" aria-label="Reset animation" title="Reset (R)">↺ Reset</button>
+  <button id="btnPrev" onclick="stepPrev()" aria-label="Previous step" title="Previous (←)">◀ Prev</button>
+  <button id="btnNext" onclick="stepNext()" aria-label="Next step" title="Next (→)">▶ Next</button>
+  <button id="btnShowAll" onclick="showAll()" aria-label="Show all steps" title="Show all (A)">⊞ Show All</button>
+  <div class="speed-group">
+    <label for="speedSlider">Speed</label>
+    <input type="range" id="speedSlider" min="0.3" max="3" step="0.1" value="1" oninput="setSpeed(this.value)" aria-label="Animation speed">
+  </div>
+  <span class="step-counter" id="stepCounter">0 / 0</span>
+  <button id="btnHC" onclick="toggleHC()" aria-label="Toggle high contrast" title="High contrast (H)">◑ Contrast</button>
+</nav>
+
+<!-- Legend -->
+<div class="legend" role="list" aria-label="Color legend">
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-abl)"></div>ABL</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-kernel)"></div>Kernel</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-init)"></div>Init / Ramdisk</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-avb)"></div>AVB / dm‑verity</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-mount)"></div>Mounting</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-sep)"></div>SELinux / sepolicy</div>
+  <div class="legend-item" role="listitem"><div class="legend-swatch" style="background:var(--c-svc)"></div>Services / Zygote</div>
+</div>
+
+<!-- ═══════════════════════════ DIAGRAM ═══════════════════════════════ -->
+<main class="canvas" id="canvas">
+
+  <!-- ───── STEP 0: ABL ───── -->
+  <div class="block abl" tabindex="0" data-step="0" data-deepdive="deep-dive/abl.html" data-fragment="abl" role="region" aria-label="ABL block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🔐</span> ABL — Android Bootloader</div>
+    <div class="block-body">
+      <ul>
+        <li>Power-on reset → SoC ROM loads ABL from boot partition.</li>
+        <li>Verifies boot chain integrity via <span class="block-callout">vbmeta</span> signature.</li>
+        <li>Reads A/B slot metadata; selects active slot; loads kernel + ramdisk.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Key files &amp; artifacts</strong>
+      <code>vbmeta.img</code>, <code>avbtool</code>, bootloader log in <code>/proc/last_kmsg</code>.<br>
+      ABL is SoC-vendor-specific (Qualcomm XBL/ABL, MediaTek preloader, etc.). Slot metadata lives in <code>misc</code> partition.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="0"><div class="arrow-shaft"></div><span class="arrow-label">loads kernel image</span></div>
+
+  <!-- ───── STEP 1: Kernel ───── -->
+  <div class="block kernel" tabindex="0" data-step="1" data-deepdive="deep-dive/kernel.html" data-fragment="kernel" role="region" aria-label="Kernel block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">⚙️</span> Linux Kernel</div>
+    <div class="block-body">
+      <ul>
+        <li>Decompresses kernel image (GKI or vendor kernel) into memory.</li>
+        <li>Initializes core subsystems: scheduler, memory, interrupts, drivers.</li>
+        <li>Mounts initial ramdisk (<code>initramfs</code>) as temporary root filesystem.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Details</strong>
+      GKI (Generic Kernel Image) since Android 12. Kernel command-line passes <code>androidboot.*</code> params.
+      Device-tree blob (DTB) provides hardware description.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="1"><div class="arrow-shaft"></div><span class="arrow-label">executes /init</span></div>
+
+  <!-- ───── STEP 2: init (ramdisk) ───── -->
+  <div class="block init" tabindex="0" data-step="2" data-deepdive="deep-dive/init.html" data-fragment="init" role="region" aria-label="Init ramdisk block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">📜</span> init — First Stage (Ramdisk)</div>
+    <div class="block-body">
+      <ul>
+        <li>Kernel executes <code>/init</code> (PID 1) from ramdisk — first userspace process.</li>
+        <li>Parses early <code>init.rc</code> and device-specific <code>init.&lt;hw&gt;.rc</code> files.</li>
+        <li>Reads <span class="block-callout">fstab.qcom</span> (or <code>fstab.&lt;hw&gt;</code>) to discover partition layout.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Vendor-specific note</strong>
+      <code>fstab.qcom</code> is Qualcomm-specific. Other SoCs use <code>fstab.&lt;hardware&gt;</code>.
+      First-stage init runs in ramdisk before real root is mounted.
+      Triggers: <code>early-init</code>, <code>init</code>, <code>late-init</code>.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="2"><div class="arrow-shaft"></div><span class="arrow-label">triggers AVB verification</span></div>
+
+  <!-- ───── STEP 3: AVB ───── -->
+  <div class="block avb" tabindex="0" data-step="3" data-deepdive="deep-dive/avb.html" data-fragment="avb" role="region" aria-label="AVB block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🛡️</span> AVB — Android Verified Boot 2.0</div>
+    <div class="block-body">
+      <ul>
+        <li>Validates <span class="block-callout">vbmeta</span> chain — ensures partitions haven't been tampered with.</li>
+        <li>Sets up <span class="block-callout">dm-linear</span> device-mapper targets to carve logical partitions from <code>super</code>.</li>
+        <li>Configures <span class="block-callout">dm-verity</span> for block-level integrity verification at read time.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Verification flow</strong>
+      <code>avbtool</code> generates vbmeta with RSA-4096/SHA-256 signatures.
+      Hash descriptors are chained across partitions.
+      On failure → boot aborts or falls back to recovery, depending on device policy (eio/restart/none).
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="3"><div class="arrow-shaft"></div><span class="arrow-label">⚡ verification check</span></div>
+
+  <!-- ───── STEP 4: Branch — AVB result ───── -->
+  <div class="branch" data-step="4">
+    <div>
+      <div class="branch-label pass">✅ AVB PASS</div>
+      <div class="block avb" tabindex="0" data-step="4" data-deepdive="deep-dive/merkle-fail.html" data-fragment="merkle" role="region" aria-label="Merkle hash tree block — click to explore">
+        <span class="dive-hint">🔍 Click to explore</span>
+        <div class="block-title"><span class="icon">🌳</span> Merkle Hash Tree Verification</div>
+        <div class="block-body">
+          <ul>
+            <li>dm-verity reads <span class="block-callout">hash_tree_descriptor</span> from vbmeta.</li>
+            <li>Builds in-memory Merkle tree; validates each 4 KiB block on access.</li>
+            <li>Corruption detected → I/O error returned to caller (EIO mode).</li>
+          </ul>
+        </div>
+        <div class="tooltip">
+          <strong>How it works</strong>
+          Hash tree root is signed in vbmeta. Each leaf = SHA-256 of a 4K data block.
+          Tree is verified lazily (on read) — no full-image scan at boot.
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="branch-label failb">❌ AVB FAIL</div>
+      <div class="block fail" tabindex="0" data-step="4" data-deepdive="deep-dive/merkle-fail.html" data-fragment="fail" role="region" aria-label="AVB failure block — click to explore">
+        <span class="dive-hint">🔍 Click to explore</span>
+        <div class="block-title"><span class="icon">🚫</span> Recovery / Abort</div>
+        <div class="block-body">
+          <ul>
+            <li>Tampered or corrupt partition detected — boot halted.</li>
+            <li>Device reboots into recovery mode or displays warning.</li>
+            <li>Error mode set by <code>avb_handle→status</code>: <em>eio | restart | none</em>.</li>
+          </ul>
+        </div>
+        <div class="tooltip">
+          <strong>Error handling</strong>
+          On unlocked bootloader: warning shown, boot continues.
+          On locked bootloader: boot aborts. Slot may be marked unbootable; bootloader tries other slot.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="4"><div class="arrow-shaft"></div><span class="arrow-label">verified → slot selection</span></div>
+
+  <!-- ───── STEP 5: Slot Selection ───── -->
+  <div class="block mount" tabindex="0" data-step="5" data-deepdive="deep-dive/slot-selection.html" data-fragment="slot" role="region" aria-label="Slot selection block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🔀</span> Slot Selection (A/B)</div>
+    <div class="block-body">
+      <ul>
+        <li>Reads slot metadata from <code>misc</code> partition (boot control HAL).</li>
+        <li>Checks <em>successful_boot</em>, <em>unbootable</em>, <em>retry_count</em> flags per slot.</li>
+        <li>Selects healthy slot (A or B); marks current slot as "active" for next boot.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>A/B seamless updates</strong>
+      Two copies of every partition (system_a/system_b, etc.).
+      OTA updates write to inactive slot; on reboot, bootloader switches.
+      If boot fails 7 times → slot marked unbootable, fallback to other slot.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="5"><div class="arrow-shaft"></div><span class="arrow-label">fstab parsed → mount</span></div>
+
+  <!-- ───── STEP 6: Mount Images ───── -->
+  <div class="block mount" tabindex="0" data-step="6" data-deepdive="deep-dive/mount.html" data-fragment="mount" role="region" aria-label="Mount images block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">💾</span> Mount Filesystem Images</div>
+    <div class="block-body">
+      <ul>
+        <li>Dynamic partitions carved from <code>super</code> via dm-linear → logical volumes.</li>
+        <li>Mounts: <code>/system</code>, <code>/vendor</code>, <code>/odm</code>, <code>/product</code>, <code>/system_ext</code>.</li>
+        <li>Overlay mounts applied (e.g., vendor overlay on <code>/vendor</code>); switches root to <code>/system</code>.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Partition details</strong>
+      <code>super</code> partition holds all dynamic partitions as logical volumes (LVM-style).
+      <code>fstab</code> declares mount options: <code>ro</code>, <code>barrier=1</code>, <code>verify</code>, etc.
+      First-stage init handles early mounts; second-stage init handles the rest.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="6"><div class="arrow-shaft"></div><span class="arrow-label">filesystem ready → SELinux</span></div>
+
+  <!-- ───── STEP 7: sepolicy ───── -->
+  <div class="block sep" tabindex="0" data-step="7" data-deepdive="deep-dive/sepolicy.html" data-fragment="sepolicy" role="region" aria-label="sepolicy block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🔒</span> SELinux / sepolicy Setup</div>
+    <div class="block-body">
+      <ul>
+        <li>Loads compiled SELinux policy from <code>/vendor/etc/selinux/</code> + <code>/system/etc/selinux/</code>.</li>
+        <li>Sets SELinux to <strong>enforcing</strong> mode; labels all mounted filesystems.</li>
+        <li>Re-executes <code>/init</code> in proper SELinux domain (<code>u:r:init:s0</code>) — "second-stage init".</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Policy compilation</strong>
+      CIL fragments from system + vendor merged at build time.
+      <code>selinux_setup</code> runs between first and second stage init.
+      File contexts applied via <code>restorecon</code> recursively.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="7"><div class="arrow-shaft"></div><span class="arrow-label">init triggers services</span></div>
+
+  <!-- ───── STEP 8: Second-stage init / Service startup ───── -->
+  <div class="block svc" tabindex="0" data-step="8" data-deepdive="deep-dive/services.html" data-fragment="services" role="region" aria-label="Service startup block — click to explore">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🚀</span> Second-Stage init — Service Startup</div>
+    <div class="block-body">
+      <ul>
+        <li>Parses full <code>init.rc</code> tree; fires triggers: <em>post-fs</em>, <em>boot</em>, <em>late-init</em>.</li>
+        <li>Starts <strong>class core</strong>: <code>ueventd</code>, <code>logd</code>, <code>servicemanager</code>, <code>hwservicemanager</code>.</li>
+        <li>Starts <strong>class hal / main</strong>: HAL daemons, <code>vold</code>, <code>surfaceflinger</code>, <code>netd</code>.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Service classes (init.rc)</strong>
+      <code>class core</code> — essential daemons that run before main.<br>
+      <code>class main</code> — standard system services.<br>
+      <code>class late_start</code> — non-critical services after boot complete.<br>
+      <code>on property:sys.boot_completed=1</code> triggers late_start.
+    </div>
+  </div>
+
+  <div class="arrow-container" data-step="8"><div class="arrow-shaft"></div><span class="arrow-label">class main → Zygote fork</span></div>
+
+  <!-- ───── STEP 9: Zygote ───── -->
+  <div class="block svc" tabindex="0" data-step="9" data-deepdive="deep-dive/zygote.html" data-fragment="zygote" role="region" aria-label="Zygote block — click to explore" style="border-width:3px;border-style:dashed">
+    <span class="dive-hint">🔍 Click to explore</span>
+    <div class="block-title"><span class="icon">🧬</span> Zygote — Android Runtime Origin</div>
+    <div class="block-body">
+      <ul>
+        <li>Started by init as service <code>zygote</code> (<code>app_process64</code> / <code>app_process32</code>).</li>
+        <li>Preloads Android framework classes + resources; starts <strong>SystemServer</strong>.</li>
+        <li>Listens on UNIX socket; forks new app processes via <code>fork()</code> + <code>specialize()</code>.</li>
+      </ul>
+    </div>
+    <div class="tooltip">
+      <strong>Zygote details</strong>
+      <code>ZygoteInit.main()</code> → preloads ~8000 classes, shared memory pages.<br>
+      <code>SystemServer</code> starts AMS, PMS, WMS, and 100+ system services.<br>
+      Boot animation stops when <code>sys.boot_completed=1</code>.<br>
+      First app launched: Launcher (home screen).
+    </div>
+  </div>
+
+  <!-- ───── STEP 10: Boot complete indicator ───── -->
+  <div class="arrow-container" data-step="9"><div class="arrow-shaft"></div></div>
+  <div class="block svc" tabindex="0" data-step="10" role="region" aria-label="Boot complete" style="text-align:center;border-style:double;border-width:3px">
+    <div class="block-title" style="justify-content:center"><span class="icon">✅</span> Boot Complete</div>
+    <div class="block-body" style="text-align:center">
+      <code>sys.boot_completed=1</code> · Launcher visible · System fully operational
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  <p>AOSP Boot Sequence Diagram &middot; Sources: <a href="https://source.android.com/docs/core/architecture/bootloader" target="_blank" rel="noopener">AOSP Bootloader</a>, <a href="https://source.android.com/docs/security/features/verifiedboot/avb" target="_blank" rel="noopener">AVB 2.0</a>, <a href="https://source.android.com/docs/core/architecture/kernel" target="_blank" rel="noopener">GKI</a>, <a href="https://source.android.com/docs/security/features/selinux" target="_blank" rel="noopener">SELinux</a>, <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">A/B OTA</a></p>
+  <p style="margin-top:.3rem">Open this HTML in any modern browser. Press <kbd>Space</kbd> to play/pause, <kbd>←</kbd><kbd>→</kbd> to step, <kbd>R</kbd> to reset, <kbd>A</kbd> to show all, <kbd>H</kbd> for high contrast.</p>
+</footer>
+
+<!-- ═══════════════════════════ JAVASCRIPT ════════════════════════════ -->
+<script>
+(function(){
+"use strict";
+
+/* ── Gather elements ── */
+const blocks = Array.from(document.querySelectorAll('.block[data-step]'));
+const arrows = Array.from(document.querySelectorAll('.arrow-container[data-step]'));
+const branch = document.querySelector('.branch[data-step]');
+const progressBar = document.getElementById('progressBar');
+const stepCounter = document.getElementById('stepCounter');
+
+/* Unique ordered steps */
+const stepSet = new Set();
+blocks.forEach(b => stepSet.add(+b.dataset.step));
+arrows.forEach(a => stepSet.add(+a.dataset.step));
+const STEPS = Array.from(stepSet).sort((a,b)=>a-b);
+const TOTAL = STEPS.length;
+
+let currentIdx = -1;   /* index into STEPS; -1 = nothing shown */
+let playing = false;
+let timer = null;
+let speedMultiplier = 1;
+
+function baseDelay(){ return 1600 / speedMultiplier; }
+
+/* ── Helpers ── */
+function elementsForStep(s){
+  return [
+    ...blocks.filter(b => +b.dataset.step === s),
+    ...arrows.filter(a => +a.dataset.step === s),
+    ...(branch && +branch.dataset.step === s ? [branch] : [])
+  ];
+}
+
+function showStep(idx, animate){
+  if(idx < 0 || idx >= TOTAL) return;
+  const s = STEPS[idx];
+  elementsForStep(s).forEach(el => {
+    el.classList.add('visible');
+    if(animate){
+      const shaft = el.querySelector('.arrow-shaft');
+      if(shaft){ shaft.classList.remove('animated'); void shaft.offsetWidth; shaft.classList.add('animated'); }
+    }
+  });
+  /* highlight active */
+  blocks.forEach(b => b.classList.remove('active'));
+  blocks.filter(b => +b.dataset.step === s).forEach(b => b.classList.add('active'));
+  updateUI(idx);
+}
+
+function hideStep(idx){
+  if(idx < 0 || idx >= TOTAL) return;
+  const s = STEPS[idx];
+  elementsForStep(s).forEach(el => el.classList.remove('visible'));
+}
+
+function updateUI(idx){
+  currentIdx = idx;
+  progressBar.style.width = ((idx+1)/TOTAL*100)+'%';
+  stepCounter.textContent = (idx+1)+' / '+TOTAL;
+  /* scroll active block into view */
+  const active = blocks.filter(b => +b.dataset.step === STEPS[idx]);
+  if(active.length) active[0].scrollIntoView({behavior:'smooth',block:'center'});
+}
+
+/* ── Public API ── */
+window.play = function(){
+  if(playing) return;
+  playing = true;
+  document.getElementById('btnPlay').classList.add('active');
+  (function tick(){
+    if(!playing) return;
+    if(currentIdx >= TOTAL-1){ pause(); return; }
+    stepNext(true);
+    timer = setTimeout(tick, baseDelay());
+  })();
+};
+
+window.pause = function(){
+  playing = false;
+  clearTimeout(timer);
+  document.getElementById('btnPlay').classList.remove('active');
+};
+
+window.reset = function(){
+  pause();
+  for(let i = TOTAL-1; i >= 0; i--) hideStep(i);
+  blocks.forEach(b => b.classList.remove('active'));
+  currentIdx = -1;
+  updateUI(-1);
+  progressBar.style.width = '0';
+  stepCounter.textContent = '0 / '+TOTAL;
+};
+
+window.stepNext = function(fromPlay){
+  if(currentIdx >= TOTAL-1) return;
+  currentIdx++;
+  showStep(currentIdx, true);
+  if(!fromPlay && playing) pause();
+};
+
+window.stepPrev = function(){
+  if(currentIdx < 0) return;
+  hideStep(currentIdx);
+  /* un-highlight */
+  blocks.filter(b => +b.dataset.step === STEPS[currentIdx]).forEach(b => b.classList.remove('active'));
+  currentIdx--;
+  if(currentIdx >= 0){
+    blocks.filter(b => +b.dataset.step === STEPS[currentIdx]).forEach(b => b.classList.add('active'));
+  }
+  updateUI(currentIdx);
+  if(playing) pause();
+};
+
+window.showAll = function(){
+  pause();
+  for(let i = 0; i < TOTAL; i++) showStep(i, false);
+  blocks.forEach(b => b.classList.remove('active'));
+  currentIdx = TOTAL-1;
+  updateUI(currentIdx);
+};
+
+window.setSpeed = function(v){
+  speedMultiplier = parseFloat(v);
+};
+
+window.toggleHC = function(){
+  document.body.classList.toggle('hc');
+};
+
+/* ── Keyboard shortcuts ── */
+document.addEventListener('keydown', e => {
+  if(e.target.tagName === 'INPUT') return;
+  switch(e.key){
+    case ' ': e.preventDefault(); playing ? pause() : play(); break;
+    case 'ArrowRight': stepNext(); break;
+    case 'ArrowLeft': stepPrev(); break;
+    case 'r': case 'R': reset(); break;
+    case 'a': case 'A': showAll(); break;
+    case 'h': case 'H': toggleHC(); break;
+  }
+});
+
+/* ── Click-to-navigate deep dive ── */
+const fragmentMap = {abl:0,kernel:1,init:2,avb:3,merkle:4,slot:5,mount:6,sepolicy:7,services:8,zygote:9};
+
+blocks.forEach(b => {
+  if(!b.dataset.deepdive) return;
+  b.addEventListener('click', function(e){
+    e.stopPropagation();
+    /* Save state */
+    try {
+      sessionStorage.setItem('aosp_boot_idx', String(currentIdx));
+      sessionStorage.setItem('aosp_boot_speed', String(speedMultiplier));
+    } catch(_){}
+    window.location.href = b.dataset.deepdive + (b.dataset.fragment ? '#' + b.dataset.fragment : '');
+  });
+  b.addEventListener('keydown', function(e){
+    if(e.key === 'Enter') b.click();
+  });
+});
+
+/* ── Restore state on load ── */
+(function restoreState(){
+  try {
+    const savedIdx = sessionStorage.getItem('aosp_boot_idx');
+    const savedSpeed = sessionStorage.getItem('aosp_boot_speed');
+    if(savedSpeed){ speedMultiplier = parseFloat(savedSpeed); document.getElementById('speedSlider').value = savedSpeed; }
+    if(savedIdx !== null){
+      const idx = parseInt(savedIdx, 10);
+      if(idx >= 0){
+        for(let i = 0; i <= idx && i < TOTAL; i++) showStep(i, false);
+        blocks.forEach(b => b.classList.remove('active'));
+        currentIdx = idx;
+        updateUI(idx);
+      }
+      sessionStorage.removeItem('aosp_boot_idx');
+      sessionStorage.removeItem('aosp_boot_speed');
+    }
+  } catch(_){}
+  /* Fragment-based navigation */
+  if(location.hash){
+    const frag = location.hash.slice(1);
+    const targetIdx = fragmentMap[frag];
+    if(targetIdx !== undefined){
+      for(let i = 0; i <= targetIdx && i < TOTAL; i++) showStep(i, false);
+      currentIdx = targetIdx;
+      updateUI(targetIdx);
+    }
+  }
+})();
+
+/* Init counter */
+stepCounter.textContent = '0 / '+TOTAL;
+
+})();
+</script>
+</body>
+</html>
+

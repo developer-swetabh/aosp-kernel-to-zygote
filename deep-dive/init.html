@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — init (First Stage / Ramdisk)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#ef6c00;--accent-light:#ffa726;--accent-bg:rgba(239,108,0,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../aosp-boot-sequence.html#init" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>init (Ramdisk)</strong></span>
+  <div class="nav-right">
+    <button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button>
+  </div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>📜 init — First Stage (Ramdisk)</h1>
+  <p class="summary">The first userspace process (PID 1) — parses init.rc, reads fstab, and triggers AVB verification and early mounts.</p>
+</header>
+
+<main class="content" role="main">
+
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Identity:</strong> <code>/init</code> runs as PID 1, the ancestor of all userspace processes. It never exits.</li>
+      <li><strong>Two stages:</strong> First-stage init runs from ramdisk (before real root); second-stage init runs after filesystems are mounted.</li>
+      <li><strong>Key action:</strong> Reads <code>fstab.&lt;hw&gt;</code> to discover partitions, triggers AVB, and performs early mounts of <code>/system</code>, <code>/vendor</code>, etc.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Kernel Executes /init</h3>
+        <p>Kernel calls <code>run_init_process("/init")</code>. This is the first-stage init binary, linked statically, running from the ramdisk tmpfs.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Parse fstab.&lt;hw&gt;</h3>
+        <p>First-stage init reads <code>/fstab.qcom</code> (or <code>/vendor/etc/fstab.&lt;hw&gt;</code>) to discover the partition layout, mount flags, and filesystem types. This file maps device paths to mount points.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Trigger AVB Verification</h3>
+        <p>Calls <code>fs_mgr</code> to set up AVB handles. Verifies vbmeta chain for partitions listed in fstab with <code>avb</code> flag. Sets up dm-verity and dm-linear targets.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Early Mounts</h3>
+        <p>Mounts <code>/system</code>, <code>/vendor</code>, <code>/odm</code>, <code>/product</code> as read-only. These are needed before second-stage init can load SELinux policy and additional configs.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <div class="step-connector"></div>
+        <h3>Load SELinux Policy</h3>
+        <p>Loads the compiled sepolicy from the mounted partitions. Transitions init to the <code>u:r:init:s0</code> SELinux context.</p>
+      </div>
+      <div class="step-item" data-num="6">
+        <h3>Re-execute as Second-Stage init</h3>
+        <p>Calls <code>execv("/init")</code> with a flag indicating second stage. Second-stage init parses the full <code>init.rc</code> tree and begins starting services.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: init.rc parsing tree -->
+  <section class="section">
+    <h2><span class="s-icon">🌲</span> init.rc Parsing &amp; Trigger Sequence</h2>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 340" width="800" height="340" role="img" aria-label="init.rc trigger sequence diagram">
+        <!-- init.rc root -->
+        <rect x="300" y="10" width="200" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"/>
+        <text x="400" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">init.rc</text>
+        <text x="400" y="48" text-anchor="middle" font-size="9" fill="#ffe0b2">Main configuration file</text>
+
+        <!-- Import lines -->
+        <line x1="340" y1="60" x2="150" y2="100" stroke="#ffa726" stroke-width="1.5"/>
+        <line x1="400" y1="60" x2="400" y2="100" stroke="#ffa726" stroke-width="1.5"/>
+        <line x1="460" y1="60" x2="650" y2="100" stroke="#ffa726" stroke-width="1.5"/>
+
+        <!-- Imported files -->
+        <rect x="50" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
+        <text x="150" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.&lt;hw&gt;.rc</text>
+
+        <rect x="300" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
+        <text x="400" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.usb.rc</text>
+
+        <rect x="550" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
+        <text x="650" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.zygote64.rc</text>
+
+        <!-- Trigger sequence -->
+        <text x="400" y="175" text-anchor="middle" font-size="12" font-weight="700" fill="#ffa726">Trigger Execution Order</text>
+
+        <!-- Triggers -->
+        <rect x="40" y="195" width="130" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0s" repeatCount="indefinite"/>
+        </rect>
+        <text x="105" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">early-init</text>
+
+        <line x1="170" y1="215" x2="210" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
+
+        <rect x="210" y="195" width="100" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="260" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">init</text>
+
+        <line x1="310" y1="215" x2="350" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
+
+        <rect x="350" y="195" width="110" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1s" repeatCount="indefinite"/>
+        </rect>
+        <text x="405" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">late-init</text>
+
+        <line x1="460" y1="215" x2="500" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
+
+        <rect x="500" y="195" width="110" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="555" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">post-fs</text>
+
+        <line x1="610" y1="215" x2="650" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
+
+        <rect x="650" y="195" width="100" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="700" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">boot</text>
+
+        <!-- fstab box -->
+        <rect x="50" y="270" width="300" height="55" rx="8" fill="rgba(21,101,192,.15)" stroke="#42a5f5" stroke-width="1.5" stroke-dasharray="4"/>
+        <text x="200" y="290" text-anchor="middle" font-size="11" font-weight="600" fill="#42a5f5">📄 fstab.qcom (vendor-specific)</text>
+        <text x="200" y="306" text-anchor="middle" font-size="9" fill="#90caf9">/dev/block/by-name/system  /system  ext4  ro,verify</text>
+        <text x="200" y="318" text-anchor="middle" font-size="9" fill="#90caf9">/dev/block/by-name/vendor  /vendor  ext4  ro,verify</text>
+
+        <defs>
+          <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File</th><th>Location</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>/init</code></td><td>Ramdisk root</td><td>First-stage init binary (statically linked)</td></tr>
+        <tr><td><code>init.rc</code></td><td><code>/system/etc/init/</code></td><td>Main service/trigger configuration</td></tr>
+        <tr><td><code>init.&lt;hw&gt;.rc</code></td><td>Ramdisk or vendor</td><td>Hardware-specific init configuration</td></tr>
+        <tr><td><code>fstab.qcom</code></td><td>Ramdisk or <code>/vendor/etc/</code></td><td>Filesystem table — partition-to-mount mapping (⚠️ vendor-specific name)</td></tr>
+        <tr><td><code>init.zygote64.rc</code></td><td><code>/system/etc/init/</code></td><td>Zygote service definition for 64-bit</td></tr>
+        <tr><td><code>ueventd.rc</code></td><td>Ramdisk</td><td>Device node permissions and ownership rules</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 fstab Not Found</h4>
+        <p>If <code>fstab.&lt;hw&gt;</code> is missing or malformed, init cannot discover partitions. Boot stalls before mounting <code>/system</code>.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🚫 init.rc Syntax Error</h4>
+        <p>A syntax error in any imported <code>*.rc</code> file causes the entire section to be skipped. Check <code>dmesg</code> for "init: /init.rc: ..." error messages.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ SELinux Denial on Mount</h4>
+        <p>If SELinux contexts don't match, mount operations may be denied even if the partition exists. Check <code>adb logcat | grep avc</code>.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Missing Device Node</h4>
+        <p>If a block device referenced in fstab doesn't appear (driver not loaded), mount fails. First-stage init waits with a timeout.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
+    <details>
+      <summary>🔧 Qualcomm fstab.qcom</summary>
+      <div class="details-body">
+        <p>Qualcomm devices use <code>fstab.qcom</code>. Partition paths typically reference <code>/dev/block/bootdevice/by-name/</code> symlinks created by the QTI uevent daemon.</p>
+        <p>Qualcomm adds custom fstab flags: <code>latemount</code>, <code>wait</code>, <code>slotselect</code>.</p>
+      </div>
+    </details>
+    <details>
+      <summary>🔧 First-stage vs Second-stage init</summary>
+      <div class="details-body">
+        <p><strong>First-stage:</strong> Runs from ramdisk. Handles AVB, early mounts, SELinux load. Minimal environment — no properties system, no service manager.</p>
+        <p><strong>Second-stage:</strong> Runs after <code>execv("/init")</code> with full filesystem. Starts property service, parses all <code>init.rc</code> imports, begins service management.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">init.rc</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Example init.rc trigger and service definition
+on early-init
+    mount tmpfs tmpfs /dev mode=0755
+
+on init
+    mkdir /mnt/vendor/persist 0771 root system
+
+on late-init
+    trigger post-fs
+    trigger boot
+
+service zygote /system/bin/app_process64 -Xzygote /system/bin \
+    --zygote --start-system-server
+    class main
+    priority -20
+    user root
+    group root readproc reserved_disk
+    socket zygote stream 660 root system</code></pre>
+    </div>
+    <div class="code-block">
+      <span class="lang-tag">fstab.qcom</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Qualcomm fstab example (vendor-specific)
+# &lt;dev&gt;                          &lt;mnt_point&gt;  &lt;type&gt; &lt;mnt_flags&gt;             &lt;fs_mgr_flags&gt;
+system  /system  ext4  ro,barrier=1  wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+vendor  /vendor  ext4  ro,barrier=1  wait,slotselect,avb=vbmeta,logical,first_stage_mount
+product /product ext4  ro,barrier=1  wait,slotselect,avb=vbmeta,logical,first_stage_mount</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/configuration/init" target="_blank" rel="noopener">AOSP — Init</a></li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/README.md" target="_blank" rel="noopener">Init README (AOSP source tree)</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images" target="_blank" rel="noopener">AOSP — Partitions and Images</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="kernel.html">← Previous: Kernel</a>
+  <a href="avb.html">Next: AVB →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../aosp-boot-sequence.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../aosp-boot-sequence.html#init';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>
+
