@@ -73,7 +73,7 @@ footer a{color:#60a5fa}
 <body>
 
 <nav class="top-nav" role="navigation" aria-label="Page navigation">
-  <a href="../aosp-boot-sequence.html#kernel" aria-label="Back to overview">← Overview</a>
+  <a href="../index.html#kernel" aria-label="Back to overview">← Overview</a>
   <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Kernel</strong></span>
   <div class="nav-right">
     <button onclick="toggleHC()" aria-label="Toggle high contrast" title="High contrast (H)">◑ Contrast</button>
@@ -298,7 +298,7 @@ adb shell zcat /proc/config.gz | grep CONFIG_DM_VERITY</code></pre>
   <a href="init.html">Next: Init (Ramdisk) →</a>
 </nav>
 
-<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../aosp-boot-sequence.html">Back to Overview</a></p></footer>
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
 
 <script>
 (function(){
@@ -312,9 +312,8 @@ const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0)
 const f=document.getElementById('stepFlow');if(f)obs.observe(f);
 window.toggleHC=function(){document.body.classList.toggle('hc')};
 window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
-document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../aosp-boot-sequence.html#kernel';if(e.key==='h'||e.key==='H')toggleHC()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#kernel';if(e.key==='h'||e.key==='H')toggleHC()});
 })();
 </script>
 </body>
 </html>
-
