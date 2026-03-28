@@ -219,15 +219,21 @@ footer a{color:#60a5fa}
   max-width:100%;
   padding:1rem;
   overflow-x:auto;
-  overflow-y:hidden;
+  overflow-y:visible;
   scrollbar-gutter:stable both-edges;
 }
 .handoff-diagram .mermaid{
-  display:flex;
-  justify-content:center;
+  display:inline-block;
+  width:max-content;
+  min-width:1100px;
+  max-width:none;
+  transform:scale(1.2);
+  transform-origin:top left;
 }
 .handoff-diagram .mermaid svg{
-  max-width:100%;
+  width:auto;
+  max-width:none;
+  min-width:1100px;
   height:auto;
 }
 
