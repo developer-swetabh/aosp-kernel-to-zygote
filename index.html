@@ -56,13 +56,13 @@ header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 .block{
   position:relative;border-radius:var(--radius);padding:1rem 1.2rem;
   border:2px solid;margin-bottom:0;
-  opacity:0;transform:translateY(24px) scale(.97);
-  transition:opacity .5s cubic-bezier(.4,0,.2,1),transform .5s cubic-bezier(.4,0,.2,1),box-shadow .3s;
+  opacity:1;transform:none;
+  transition:box-shadow .3s,filter .2s;
   cursor:default;
 }
 .block[data-deepdive]{cursor:pointer}
 .block[data-deepdive]:hover{filter:brightness(1.12)}
-.block.visible{opacity:1;transform:translateY(0) scale(1)}
+.block.visible{opacity:1;transform:none}
 .block.active{box-shadow:0 0 0 3px rgba(255,255,255,.25),var(--shadow);transform:scale(1.015)}
 .block:focus-visible{outline:3px solid #60a5fa;outline-offset:3px}
 .block-title{font-weight:700;font-size:1.05rem;margin-bottom:.35rem;display:flex;align-items:center;gap:.5rem}
@@ -84,7 +84,7 @@ header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 .block.fail{background:var(--c-fail);border-color:var(--c-fail-border);color:#fff}
 
 /* ──────────────────────────── Arrows / connectors ───────────────────── */
-.arrow-container{display:flex;justify-content:center;align-items:center;height:48px;position:relative;opacity:0;transition:opacity .4s}
+.arrow-container{display:flex;justify-content:center;align-items:center;height:48px;position:relative;opacity:1;transition:none}
 .arrow-container.visible{opacity:1}
 .arrow-shaft{width:3px;height:28px;background:var(--text-dim);position:relative}
 .arrow-shaft::after{content:'';position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--text-dim)}
@@ -218,20 +218,17 @@ footer a{color:#60a5fa}
   width:100%;
   max-width:100%;
   padding:1rem;
-  overflow:auto;
+  overflow-x:auto;
+  overflow-y:hidden;
   scrollbar-gutter:stable both-edges;
 }
 .handoff-diagram .mermaid{
-  width:100%;
-  min-width:0;
-  max-width:100%;
+  display:flex;
+  justify-content:center;
 }
-.handoff-diagram svg{
-  display:block;
-  width:100% !important;
-  max-width:100% !important;
-  min-width:0 !important;
-  height:auto !important;
+.handoff-diagram .mermaid svg{
+  max-width:100%;
+  height:auto;
 }
 
 /* ──────────────────────────── Print ─────────────────────────────────── */
@@ -256,7 +253,11 @@ footer a{color:#60a5fa}
   .handoff-title-wrap h2{font-size:1.05rem}
   .handoff-subtitle{font-size:.82rem}
   .svg-diagram{width:900px;min-width:900px}
+  .handoff-diagram .mermaid{display:flex;justify-content:center}
+  .handoff-diagram .mermaid svg{max-width:100%;height:auto}
 }
+
+.controls,.progress-track{display:none}
 </style>
 </head>
 <body>
@@ -729,11 +730,11 @@ sequenceDiagram
 
 <footer>
   <p>AOSP Boot Sequence Diagram &middot; Sources: <a href="https://source.android.com/docs/core/architecture/bootloader" target="_blank" rel="noopener">AOSP Bootloader</a>, <a href="https://source.android.com/docs/security/features/verifiedboot/avb" target="_blank" rel="noopener">AVB 2.0</a>, <a href="https://source.android.com/docs/core/architecture/kernel" target="_blank" rel="noopener">GKI</a>, <a href="https://source.android.com/docs/security/features/selinux" target="_blank" rel="noopener">SELinux</a>, <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">A/B OTA</a></p>
-  <p style="margin-top:.3rem">Open this HTML in any modern browser. Press <kbd>Space</kbd> to play/pause, <kbd>←</kbd><kbd>→</kbd> to step, <kbd>R</kbd> to reset, <kbd>A</kbd> to show all, <kbd>H</kbd> for high contrast.</p>
+  <p style="margin-top:.3rem">Open this HTML in any modern browser. The overview now renders fully expanded by default. Press <kbd>H</kbd> for high contrast.</p>
 </footer>
 
 <!-- ═══════════════════════════ JAVASCRIPT ════════════════════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -869,11 +870,6 @@ window.toggleHC = function(){
 document.addEventListener('keydown', e => {
   if(e.target.tagName === 'INPUT') return;
   switch(e.key){
-    case ' ': e.preventDefault(); playing ? pause() : play(); break;
-    case 'ArrowRight': stepNext(); break;
-    case 'ArrowLeft': stepPrev(); break;
-    case 'r': case 'R': reset(); break;
-    case 'a': case 'A': showAll(); break;
     case 'h': case 'H': toggleHC(); break;
   }
 });
@@ -885,11 +881,6 @@ blocks.forEach(b => {
   if(!b.dataset.deepdive) return;
   b.addEventListener('click', function(e){
     e.stopPropagation();
-    /* Save state */
-    try {
-      sessionStorage.setItem('aosp_boot_idx', String(currentIdx));
-      sessionStorage.setItem('aosp_boot_speed', String(speedMultiplier));
-    } catch(_){}
     window.location.href = b.dataset.deepdive + (b.dataset.fragment ? '#' + b.dataset.fragment : '');
   });
   b.addEventListener('keydown', function(e){
@@ -900,29 +891,21 @@ blocks.forEach(b => {
 /* ── Restore state on load ── */
 (function restoreState(){
   try {
-    const savedIdx = sessionStorage.getItem('aosp_boot_idx');
-    const savedSpeed = sessionStorage.getItem('aosp_boot_speed');
-    if(savedSpeed){ speedMultiplier = parseFloat(savedSpeed); document.getElementById('speedSlider').value = savedSpeed; }
-    if(savedIdx !== null){
-      const idx = parseInt(savedIdx, 10);
-      if(idx >= 0){
-        for(let i = 0; i <= idx && i < TOTAL; i++) showStep(i, false);
-        blocks.forEach(b => b.classList.remove('active'));
-        currentIdx = idx;
-        updateUI(idx);
-      }
-      sessionStorage.removeItem('aosp_boot_idx');
-      sessionStorage.removeItem('aosp_boot_speed');
-    }
+    sessionStorage.removeItem('aosp_boot_idx');
+    sessionStorage.removeItem('aosp_boot_speed');
   } catch(_){}
-  /* Fragment-based navigation */
+
+  blocks.forEach(b => b.classList.remove('active'));
   if(location.hash){
     const frag = location.hash.slice(1);
     const targetIdx = fragmentMap[frag];
     if(targetIdx !== undefined){
-      for(let i = 0; i <= targetIdx && i < TOTAL; i++) showStep(i, false);
       currentIdx = targetIdx;
-      updateUI(targetIdx);
+      const targetBlocks = blocks.filter(b => +b.dataset.step === targetIdx);
+      targetBlocks.forEach(b => b.classList.add('active'));
+      if(targetBlocks.length){
+        targetBlocks[0].scrollIntoView({behavior:'smooth',block:'center'});
+      }
     }
   }
 })();
@@ -961,48 +944,45 @@ window.downloadSVG = function(svgId, filename){
 
 if(window.mermaid){
   window.mermaid.initialize({
-    startOnLoad:false,
-    theme:'base',
-    sequence:{
-      actorMargin:36,
-      boxMargin:8,
-      boxTextMargin:6,
-      diagramMarginX:10,
-      diagramMarginY:12,
-      messageMargin:16,
-      noteMargin:10,
-      useMaxWidth:true
-    },
+    startOnLoad: true,
+    theme: 'dark',
     themeVariables:{
-      background:'#020617',
-      fontSize:'15px',
-      primaryColor:'#0f172a',
-      primaryBorderColor:'#38bdf8',
-      primaryTextColor:'#e2e8f0',
-      lineColor:'#94a3b8',
-      secondaryColor:'#172554',
-      secondaryBorderColor:'#60a5fa',
-      secondaryTextColor:'#dbeafe',
-      tertiaryColor:'#14532d',
-      tertiaryBorderColor:'#4ade80',
-      tertiaryTextColor:'#dcfce7',
-      actorBkg:'#0f172a',
-      actorBorder:'#38bdf8',
-      actorTextColor:'#e2e8f0',
-      actorLineColor:'#64748b',
-      signalColor:'#e2e8f0',
-      signalTextColor:'#e2e8f0',
-      labelBoxBkgColor:'#0f172a',
-      labelBoxBorderColor:'#475569',
-      labelTextColor:'#e2e8f0',
-      noteBkgColor:'#172554',
-      noteBorderColor:'#60a5fa',
-      noteTextColor:'#dbeafe',
-      sequenceNumberColor:'#e2e8f0'
+      background:         '#020617',
+      primaryColor:       '#0f172a',
+      primaryTextColor:   '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      lineColor:          '#4a9eff',
+      secondaryColor:     '#1e293b',
+      tertiaryColor:      '#0f172a',
+      actorBkg:           '#0f172a',
+      actorBorder:        '#38bdf8',
+      actorTextColor:     '#e2e8f0',
+      noteBkgColor:       '#172554',
+      noteTextColor:      '#dbeafe',
+      activationBkgColor: '#1e293b',
+      signalColor:        '#38bdf8',
+      signalTextColor:    '#e2e8f0',
+      labelBoxBkgColor:   '#0f172a',
+      labelTextColor:     '#e2e8f0',
+      loopTextColor:      '#94a3b8',
+      fontSize:           '13px',
+    },
+    sequence:{
+      actorMargin:  40,
+      boxMargin:    10,
+      messageMargin:35,
+      mirrorActors: false,
+      useMaxWidth:  true,
     }
   });
-  window.mermaid.run({querySelector:'#bootSequenceHandoffCard .mermaid'});
 }
+
+blocks.forEach(b => b.classList.add('visible'));
+arrows.forEach(a => a.classList.add('visible'));
+if(branch) branch.classList.add('visible');
+currentIdx = TOTAL-1;
+progressBar.style.width = '100%';
+stepCounter.textContent = TOTAL+' / '+TOTAL;
 
 if(handoffCard){
   const revealHandoff = entries => {
