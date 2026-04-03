@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — Zygote (Android Runtime Origin)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#00695c;--accent-light:#26a69a;--accent-bg:rgba(0,105,92,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+.page-nav .disabled{opacity:.3;pointer-events:none}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+/* Fork animation */
+.fork-node{opacity:0;transition:all .6s cubic-bezier(.4,0,.2,1);transform:scale(.8)}
+.fork-node.active{opacity:1;transform:scale(1)}
+.fork-line{stroke-dasharray:200;stroke-dashoffset:200;transition:stroke-dashoffset 1s ease-out}
+.fork-line.active{stroke-dashoffset:0}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item,.fork-node{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#zygote" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Zygote</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button></div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🧬 Zygote — Android Runtime Origin</h1>
+  <p class="summary">The process that births every Android app — preloads the framework, starts SystemServer, then listens to fork new app processes on demand.</p>
+</header>
+
+<main class="content" role="main">
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Origin process:</strong> Zygote is started by init as <code>app_process64</code> (or <code>app_process32</code>). It is the ancestor of every Android application process.</li>
+      <li><strong>Class preloading:</strong> Preloads ~8000 framework classes and shared resources (drawables, layouts) into memory. These pages are shared across all forked processes via copy-on-write (COW).</li>
+      <li><strong>Fork model:</strong> New app processes are created by <code>fork()</code> from Zygote, not <code>exec()</code>. This makes app startup extremely fast (~200ms) because the entire framework is already in memory.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>init Starts Zygote</h3>
+        <p>Init starts the <code>zygote</code> service defined in <code>init.zygote64.rc</code>. The binary is <code>/system/bin/app_process64</code> with arguments <code>--zygote --start-system-server</code>.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>ZygoteInit.main()</h3>
+        <p>The <code>app_process</code> binary initializes the Android Runtime (ART) and calls <code>ZygoteInit.main()</code> in Java. This is where the Java world begins.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Preload Classes &amp; Resources</h3>
+        <p>Preloads ~8000 classes from <code>/system/etc/preloaded-classes</code>, shared libraries, and common resources. These become shared memory pages for all future apps.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Fork SystemServer</h3>
+        <p>Zygote forks its first child: <code>system_server</code>. SystemServer starts 100+ framework services: ActivityManagerService (AMS), PackageManagerService (PMS), WindowManagerService (WMS), etc.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <div class="step-connector"></div>
+        <h3>Open Zygote Socket</h3>
+        <p>Zygote creates a UNIX domain socket (<code>/dev/socket/zygote</code>) and enters <code>runSelectLoop()</code>. It now waits for fork requests from <code>system_server</code> (via AMS).</p>
+      </div>
+      <div class="step-item" data-num="6">
+        <h3>Fork App Processes</h3>
+        <p>When a user launches an app, AMS sends a request to the Zygote socket. Zygote calls <code>fork()</code> + <code>Zygote.specialize()</code> to create the new process with the correct UID, SELinux context, and capabilities.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: Zygote Fork Model -->
+  <section class="section">
+    <h2><span class="s-icon">🔗</span> Zygote Fork Model Animation</h2>
+    <div class="anim-controls">
+      <button onclick="forkPlay()">▶ Animate Fork</button>
+      <button onclick="forkReset()">↺ Reset</button>
+    </div>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 380" width="800" height="380" role="img" aria-label="Zygote fork model animation" id="forkSvg">
+        <!-- Zygote parent -->
+        <rect x="300" y="15" width="200" height="60" rx="10" fill="#00695c" stroke="#26a69a" stroke-width="2" class="fork-node" id="fn-zyg">
+          <animate attributeName="stroke-opacity" values="1;.4;1" dur="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="400" y="40" text-anchor="middle" font-size="14" font-weight="700" fill="#fff" class="fork-node" id="ft-zyg">🧬 Zygote</text>
+        <text x="400" y="58" text-anchor="middle" font-size="9" fill="#80cbc4" class="fork-node" id="ft-zyg2">app_process64 · PID ~300</text>
+
+        <!-- Preloaded classes bubble -->
+        <rect x="560" y="15" width="210" height="60" rx="8" fill="rgba(0,105,92,.2)" stroke="#26a69a" stroke-width="1" stroke-dasharray="4" class="fork-node" id="fn-preload"/>
+        <text x="665" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#80cbc4" class="fork-node" id="ft-preload">📚 Preloaded in Zygote</text>
+        <text x="665" y="55" text-anchor="middle" font-size="9" fill="#4db6ac" class="fork-node" id="ft-preload2">~8000 classes · shared resources</text>
+
+        <!-- Fork arrows -->
+        <line x1="350" y1="75" x2="200" y2="130" stroke="#26a69a" stroke-width="2" class="fork-line" id="fl-ss"/>
+        <line x1="400" y1="75" x2="400" y2="200" stroke="#26a69a" stroke-width="1.5" stroke-dasharray="4" class="fork-line" id="fl-sock"/>
+        <line x1="400" y1="240" x2="150" y2="300" stroke="#4dd0e1" stroke-width="1.5" class="fork-line" id="fl-app1"/>
+        <line x1="400" y1="240" x2="400" y2="300" stroke="#4dd0e1" stroke-width="1.5" class="fork-line" id="fl-app2"/>
+        <line x1="400" y1="240" x2="650" y2="300" stroke="#4dd0e1" stroke-width="1.5" class="fork-line" id="fl-app3"/>
+
+        <!-- SystemServer -->
+        <rect x="80" y="130" width="240" height="55" rx="8" fill="#00897b" stroke="#4db6ac" stroke-width="2" class="fork-node" id="fn-ss"/>
+        <text x="200" y="153" text-anchor="middle" font-size="13" font-weight="700" fill="#fff" class="fork-node" id="ft-ss">system_server</text>
+        <text x="200" y="170" text-anchor="middle" font-size="9" fill="#80cbc4" class="fork-node" id="ft-ss2">AMS · PMS · WMS · 100+ services</text>
+
+        <!-- Zygote socket -->
+        <rect x="340" y="200" width="120" height="40" rx="6" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1.5" class="fork-node" id="fn-socket"/>
+        <text x="400" y="224" text-anchor="middle" font-size="10" font-weight="600" fill="#80cbc4" class="fork-node" id="ft-socket">📡 Zygote Socket</text>
+
+        <!-- App processes -->
+        <rect x="60" y="300" width="180" height="50" rx="8" fill="rgba(77,208,225,.15)" stroke="#4dd0e1" stroke-width="1.5" class="fork-node" id="fn-app1"/>
+        <text x="150" y="322" text-anchor="middle" font-size="11" font-weight="600" fill="#4dd0e1" class="fork-node" id="ft-app1">📱 App Process 1</text>
+        <text x="150" y="340" text-anchor="middle" font-size="9" fill="#80deea" class="fork-node" id="ft-app1b">com.example.app1 · UID 10042</text>
+
+        <rect x="300" y="300" width="200" height="50" rx="8" fill="rgba(77,208,225,.15)" stroke="#4dd0e1" stroke-width="1.5" class="fork-node" id="fn-app2"/>
+        <text x="400" y="322" text-anchor="middle" font-size="11" font-weight="600" fill="#4dd0e1" class="fork-node" id="ft-app2">📱 App Process 2</text>
+        <text x="400" y="340" text-anchor="middle" font-size="9" fill="#80deea" class="fork-node" id="ft-app2b">Launcher (Home) · UID 10001</text>
+
+        <rect x="560" y="300" width="180" height="50" rx="8" fill="rgba(77,208,225,.15)" stroke="#4dd0e1" stroke-width="1.5" class="fork-node" id="fn-app3"/>
+        <text x="650" y="322" text-anchor="middle" font-size="11" font-weight="600" fill="#4dd0e1" class="fork-node" id="ft-app3">📱 App Process N</text>
+        <text x="650" y="340" text-anchor="middle" font-size="9" fill="#80deea" class="fork-node" id="ft-app3b">fork() + specialize()</text>
+
+        <!-- Labels -->
+        <text x="260" y="107" font-size="9" font-weight="600" fill="#26a69a" class="fork-node" id="ft-fork1">fork()</text>
+        <text x="415" y="180" font-size="9" fill="var(--text-dim)" class="fork-node" id="ft-listen">runSelectLoop()</text>
+        <text x="260" y="278" font-size="9" font-weight="600" fill="#4dd0e1" class="fork-node" id="ft-fork2">fork() on request</text>
+
+        <!-- Boot complete -->
+        <rect x="80" y="195" width="240" height="30" rx="4" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1" class="fork-node" id="fn-boot"/>
+        <text x="200" y="214" text-anchor="middle" font-size="10" font-weight="600" fill="#66bb6a" class="fork-node" id="ft-boot">✅ sys.boot_completed=1</text>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>app_process64</code></td><td>Native binary that starts the Android Runtime and calls <code>ZygoteInit.main()</code></td></tr>
+        <tr><td><code>ZygoteInit.java</code></td><td>Java entry point — preloads classes, forks system_server, enters select loop</td></tr>
+        <tr><td><code>preloaded-classes</code></td><td>List of ~8000 class names to preload into Zygote's memory</td></tr>
+        <tr><td><code>init.zygote64.rc</code></td><td>Service definition for 64-bit Zygote</td></tr>
+        <tr><td><code>/dev/socket/zygote</code></td><td>UNIX domain socket for fork requests from AMS</td></tr>
+        <tr><td><code>SystemServer.java</code></td><td>First Zygote child — starts all framework services</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 Zygote Crash</h4>
+        <p>If Zygote crashes, <strong>all app processes die</strong> (they're children of Zygote). Init restarts Zygote, which restarts system_server, causing a full soft reboot.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🚫 system_server Crash</h4>
+        <p>system_server crash triggers a Zygote restart (system_server is critical). Results in "System UI isn't responding" dialog and a soft reboot.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Preload Failure</h4>
+        <p>If a preloaded class is missing or corrupted, Zygote may crash during startup. Check <code>logcat</code> for class loading errors.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Socket Permission Denied</h4>
+        <p>If SELinux denies access to the Zygote socket, AMS can't request app forks. Apps won't start. Check <code>avc: denied</code> for <code>zygote</code> socket.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
+    <details>
+      <summary>🔧 32-bit vs 64-bit Zygote</summary>
+      <div class="details-body">
+        <p>On 64-bit devices, two Zygote processes may run: <code>zygote</code> (64-bit, primary) and <code>zygote_secondary</code> (32-bit, for legacy apps). Defined in <code>init.zygote64_32.rc</code>.</p>
+        <p>The 32-bit Zygote uses <code>app_process32</code> and has its own socket (<code>/dev/socket/zygote_secondary</code>).</p>
+      </div>
+    </details>
+    <details>
+      <summary>🔧 USAP (Unspecialized App Process) Pool</summary>
+      <div class="details-body">
+        <p>Since Android 10, Zygote can maintain a pool of pre-forked "unspecialized" processes. When an app launch request arrives, an existing USAP is specialized (faster than fork).</p>
+        <p>Controlled by <code>persist.device_config.runtime_native.usap_pool_enabled</code>.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Check Zygote process
+adb shell ps -ef | grep zygote
+# root  300  1  ...  zygote64
+# root  301  1  ...  zygote (32-bit secondary)
+
+# Check system_server
+adb shell ps -ef | grep system_server
+# system  500  300  ...  system_server
+
+# View Zygote socket
+adb shell ls -lZ /dev/socket/zygote
+# srw-rw----  root system u:object_r:zygote_socket:s0  zygote
+
+# Count preloaded classes
+adb shell wc -l /system/etc/preloaded-classes
+# ~8000
+
+# Check boot completion
+adb shell getprop sys.boot_completed   # 1</code></pre>
+    </div>
+    <div class="code-block">
+      <span class="lang-tag">init.zygote64.rc</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code>service zygote /system/bin/app_process64 -Xzygote /system/bin \
+    --zygote --start-system-server --socket-name=zygote
+    class main
+    priority -20
+    user root
+    group root readproc reserved_disk
+    socket zygote stream 660 root system
+    socket usap_pool_primary stream 660 root system
+    onrestart exec_background -- /system/bin/vdc volume abort_fuse
+    onrestart write /sys/power/state on
+    onrestart restart audioserver
+    onrestart restart cameraserver
+    onrestart restart media
+    onrestart restart --only-if-running netd
+    task_profiles ProcessCapacityHigh MaxPerformance
+    critical window=${zygote.critical_window.minute:-off} \
+        target=zygote-fatal</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/runtime" target="_blank" rel="noopener">AOSP — Android Runtime</a></li>
+      <li>📄 <a href="https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/com/android/internal/os/ZygoteInit.java" target="_blank" rel="noopener">ZygoteInit.java (AOSP source)</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/configuration/init" target="_blank" rel="noopener">AOSP — Init (service definitions)</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="services.html">← Previous: Service Startup</a>
+  <a class="disabled" aria-disabled="true">End of Sequence</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+
+/* Fork animation */
+const forkOrder=[
+  'fn-zyg','ft-zyg','ft-zyg2','fn-preload','ft-preload','ft-preload2',
+  'fl-ss','ft-fork1','fn-ss','ft-ss','ft-ss2',
+  'fn-boot','ft-boot',
+  'fl-sock','ft-listen','fn-socket','ft-socket',
+  'fl-app1','ft-fork2','fn-app1','ft-app1','ft-app1b',
+  'fl-app2','fn-app2','ft-app2','ft-app2b',
+  'fl-app3','fn-app3','ft-app3','ft-app3b'
+];
+let forkIdx=-1,forkPlaying=false,forkTimer=null;
+
+window.forkPlay=function(){
+  if(forkPlaying)return;forkPlaying=true;
+  (function t(){
+    if(!forkPlaying)return;
+    if(forkIdx>=forkOrder.length-1){forkPlaying=false;return}
+    forkIdx++;
+    const el=document.getElementById(forkOrder[forkIdx]);
+    if(el)el.classList.add('active');
+    forkTimer=setTimeout(t,200);
+  })();
+};
+window.forkReset=function(){
+  forkPlaying=false;clearTimeout(forkTimer);
+  forkOrder.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active')});
+  forkIdx=-1;
+};
+
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#zygote';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

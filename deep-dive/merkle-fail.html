@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — Merkle Hash Tree &amp; AVB Failure</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#e65100;--accent-light:#fb8c00;--accent-bg:rgba(230,81,0,.15);--fail:#b71c1c;--fail-light:#ef5350;--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:linear-gradient(90deg,var(--accent),var(--fail));border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.overview-list li.fail-item{background:rgba(183,28,28,.15);border-left-color:var(--fail)}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.anim-controls button.active{background:#2563eb;border-color:#3b82f6}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+
+/* Merkle tree animation */
+.merkle-node{transition:all .6s cubic-bezier(.4,0,.2,1);opacity:.2}
+.merkle-node.active{opacity:1}
+.merkle-node.verified{opacity:1}
+.merkle-line{transition:stroke-opacity .5s;stroke-opacity:.15}
+.merkle-line.active{stroke-opacity:1;stroke:#66bb6a}
+.merkle-line.fail-line{stroke-opacity:1;stroke:#ef5350}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item,.merkle-node{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#merkle" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Merkle Tree / Fail</strong></span>
+  <div class="nav-right">
+    <button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button>
+  </div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🌳 Merkle Hash Tree &amp; 🚫 AVB Failure Branch</h1>
+  <p class="summary">How dm-verity builds and verifies the Merkle hash tree at read time — and what happens when verification fails.</p>
+</header>
+
+<main class="content" role="main">
+
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Merkle tree verification:</strong> dm-verity uses a binary hash tree where each leaf is the SHA-256 of a 4 KiB data block. The root hash is signed in <code>vbmeta</code>.</li>
+      <li><strong>Lazy verification:</strong> Blocks are verified <em>on read</em>, not at boot — no full partition scan needed. This keeps boot fast.</li>
+      <li class="fail-item"><strong>Failure path:</strong> If AVB or Merkle verification fails, the device halts (locked), shows warning (unlocked), or enters recovery — depending on error mode.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How Merkle Verification Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Read hashtree_descriptor from vbmeta</h3>
+        <p>The <code>hashtree_descriptor</code> contains: partition name, hash algorithm (SHA-256), salt, root hash, tree offset, and tree size. This descriptor is signed as part of vbmeta.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Build In-Memory Merkle Tree Structure</h3>
+        <p>dm-verity creates the tree metadata in memory. Each leaf node covers one 4 KiB data block. Parent nodes are the hash of their children's hashes concatenated. The tree depth depends on partition size.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Block Read Triggers Verification</h3>
+        <p>When a process reads a block, dm-verity intercepts the I/O. It computes SHA-256(salt + block_data) and walks up the tree, verifying each level matches until reaching the root.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Root Hash Check</h3>
+        <p>The computed root hash is compared against the root hash from <code>hashtree_descriptor</code>. If it matches, the read proceeds. If it doesn't, corruption is detected.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <h3>Corruption Response</h3>
+        <p>Based on error mode: <strong>eio</strong> = return I/O error to the calling process; <strong>restart</strong> = reboot device; <strong>none</strong> = log only (debug).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Merkle Tree SVG Animation -->
+  <section class="section" id="merkleSection">
+    <h2><span class="s-icon">🌳</span> Interactive Merkle Tree Animation</h2>
+    <p style="font-size:.82rem;color:var(--text-dim);margin-bottom:.5rem">Watch how a single block read triggers verification up the tree. Click <strong>Verify Block</strong> to see the path, or <strong>Simulate Corruption</strong> to see failure detection.</p>
+    <div class="anim-controls">
+      <button onclick="merkleVerify()" id="btnVerify">✅ Verify Block</button>
+      <button onclick="merkleCorrupt()" id="btnCorrupt">❌ Simulate Corruption</button>
+      <button onclick="merkleReset()">↺ Reset</button>
+    </div>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 380" width="800" height="380" role="img" aria-label="Interactive Merkle hash tree animation" id="merkleSvg">
+        <!-- Root (Level 0) -->
+        <line x1="400" y1="55" x2="200" y2="115" class="merkle-line" id="ml-r-l"/>
+        <line x1="400" y1="55" x2="600" y2="115" class="merkle-line" id="ml-r-r"/>
+        <rect x="340" y="15" width="120" height="45" rx="8" class="merkle-node" id="mn-root" fill="#e65100" stroke="#fb8c00" stroke-width="2"/>
+        <text x="400" y="35" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" class="merkle-node" id="mt-root">Root Hash</text>
+        <text x="400" y="50" text-anchor="middle" font-size="8" fill="#ffe0b2" class="merkle-node" id="mt-root2">Signed in vbmeta</text>
+
+        <!-- Level 1 -->
+        <line x1="200" y1="155" x2="100" y2="215" class="merkle-line" id="ml-l-ll"/>
+        <line x1="200" y1="155" x2="300" y2="215" class="merkle-line" id="ml-l-lr"/>
+        <line x1="600" y1="155" x2="500" y2="215" class="merkle-line" id="ml-r-rl"/>
+        <line x1="600" y1="155" x2="700" y2="215" class="merkle-line" id="ml-r-rr"/>
+
+        <rect x="140" y="115" width="120" height="45" rx="6" class="merkle-node" id="mn-l" fill="#bf360c" stroke="#e65100" stroke-width="1.5"/>
+        <text x="200" y="135" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-l">H(H0+H1)</text>
+        <text x="200" y="150" text-anchor="middle" font-size="8" fill="#ffcc80" class="merkle-node" id="mt-l2">Internal node</text>
+
+        <rect x="540" y="115" width="120" height="45" rx="6" class="merkle-node" id="mn-r" fill="#bf360c" stroke="#e65100" stroke-width="1.5"/>
+        <text x="600" y="135" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-r">H(H2+H3)</text>
+        <text x="600" y="150" text-anchor="middle" font-size="8" fill="#ffcc80" class="merkle-node" id="mt-r2">Internal node</text>
+
+        <!-- Level 2 (Leaf hashes) -->
+        <line x1="100" y1="255" x2="100" y2="295" class="merkle-line" id="ml-ll-d"/>
+        <line x1="300" y1="255" x2="300" y2="295" class="merkle-line" id="ml-lr-d"/>
+        <line x1="500" y1="255" x2="500" y2="295" class="merkle-line" id="ml-rl-d"/>
+        <line x1="700" y1="255" x2="700" y2="295" class="merkle-line" id="ml-rr-d"/>
+
+        <rect x="45" y="215" width="110" height="42" rx="6" class="merkle-node" id="mn-h0" fill="#4e342e" stroke="#8d6e63" stroke-width="1.5"/>
+        <text x="100" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-h0">H0</text>
+        <text x="100" y="249" text-anchor="middle" font-size="8" fill="#bcaaa4" class="merkle-node" id="mt-h0b">SHA-256(salt+B0)</text>
+
+        <rect x="245" y="215" width="110" height="42" rx="6" class="merkle-node" id="mn-h1" fill="#4e342e" stroke="#8d6e63" stroke-width="1.5"/>
+        <text x="300" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-h1">H1</text>
+        <text x="300" y="249" text-anchor="middle" font-size="8" fill="#bcaaa4" class="merkle-node" id="mt-h1b">SHA-256(salt+B1)</text>
+
+        <rect x="445" y="215" width="110" height="42" rx="6" class="merkle-node" id="mn-h2" fill="#4e342e" stroke="#8d6e63" stroke-width="1.5"/>
+        <text x="500" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-h2">H2</text>
+        <text x="500" y="249" text-anchor="middle" font-size="8" fill="#bcaaa4" class="merkle-node" id="mt-h2b">SHA-256(salt+B2)</text>
+
+        <rect x="645" y="215" width="110" height="42" rx="6" class="merkle-node" id="mn-h3" fill="#4e342e" stroke="#8d6e63" stroke-width="1.5"/>
+        <text x="700" y="235" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-h3">H3</text>
+        <text x="700" y="249" text-anchor="middle" font-size="8" fill="#bcaaa4" class="merkle-node" id="mt-h3b">SHA-256(salt+B3)</text>
+
+        <!-- Data blocks -->
+        <rect x="45" y="295" width="110" height="38" rx="4" class="merkle-node" id="mn-b0" fill="#1565c0" stroke="#42a5f5" stroke-width="1.5"/>
+        <text x="100" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-b0">Block 0</text>
+        <text x="100" y="325" text-anchor="middle" font-size="8" fill="#90caf9" class="merkle-node" id="mt-b0b">4 KiB data</text>
+
+        <rect x="245" y="295" width="110" height="38" rx="4" class="merkle-node" id="mn-b1" fill="#1565c0" stroke="#42a5f5" stroke-width="1.5"/>
+        <text x="300" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-b1">Block 1</text>
+        <text x="300" y="325" text-anchor="middle" font-size="8" fill="#90caf9" class="merkle-node" id="mt-b1b">4 KiB data</text>
+
+        <rect x="445" y="295" width="110" height="38" rx="4" class="merkle-node" id="mn-b2" fill="#1565c0" stroke="#42a5f5" stroke-width="1.5"/>
+        <text x="500" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-b2">Block 2</text>
+        <text x="500" y="325" text-anchor="middle" font-size="8" fill="#90caf9" class="merkle-node" id="mt-b2b">4 KiB data</text>
+
+        <rect x="645" y="295" width="110" height="38" rx="4" class="merkle-node" id="mn-b3" fill="#1565c0" stroke="#42a5f5" stroke-width="1.5"/>
+        <text x="700" y="312" text-anchor="middle" font-size="10" font-weight="600" fill="#fff" class="merkle-node" id="mt-b3">Block 3</text>
+        <text x="700" y="325" text-anchor="middle" font-size="8" fill="#90caf9" class="merkle-node" id="mt-b3b">4 KiB data</text>
+
+        <!-- Status text -->
+        <text x="400" y="370" text-anchor="middle" font-size="12" font-weight="600" fill="var(--text-dim)" id="merkleStatus">Click a button above to start the animation</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- AVB Failure Section -->
+  <section class="section" id="failSection">
+    <h2><span class="s-icon">🚫</span> AVB Failure Path</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🔒 Locked Device + Verification Fail</h4>
+        <p>Boot is <strong>halted immediately</strong>. A red warning screen is displayed. The device cannot proceed past the bootloader. User must reflash with verified images.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🔓 Unlocked Device + Verification Fail</h4>
+        <p>A yellow/orange warning screen is shown for 5 seconds. Boot <strong>continues</strong> with <code>androidboot.verifiedbootstate=orange</code>. dm-verity may run in logging mode.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Runtime dm-verity EIO</h4>
+        <p>A block read fails Merkle verification at runtime. The reading process receives an I/O error (<code>-EIO</code>). System may become unstable if critical blocks are affected.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Slot Marked Unbootable</h4>
+        <p>After repeated AVB failures, the boot control HAL marks the slot as <code>unbootable</code>. The bootloader switches to the other slot on next boot.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
+    <details>
+      <summary>🔧 dm-verity Error Handling Modes</summary>
+      <div class="details-body">
+        <p>The <code>verity_mode</code> kernel parameter (set by fstab or bootloader) controls behavior on corruption:</p>
+        <ul style="margin-left:1.2rem;margin-top:.4rem;color:var(--text-dim)">
+          <li><code>eio</code> — Return I/O error. Affected files become unreadable. (Production default)</li>
+          <li><code>restart</code> — Reboot the device. More aggressive but ensures clean state.</li>
+          <li><code>none</code> — Log only, allow read to succeed. (Debug/eng builds)</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>🔧 Hash Tree Storage</summary>
+      <div class="details-body">
+        <p>The hash tree data is appended to the partition image itself. The <code>hashtree_descriptor</code> in vbmeta tells dm-verity where the tree starts (offset) and its size.</p>
+        <p>For a 2 GB system partition with 4 KiB blocks, the hash tree adds approximately 32 MB of overhead (~1.5%).</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Check dm-verity status on a running device
+adb shell dmctl table system-verity
+
+# View verity state
+adb shell getprop ro.boot.veritymode
+# Expected: enforcing
+
+# Check for dm-verity errors in kernel log
+adb shell dmesg | grep -i verity
+
+# Generate hash tree for a partition image
+veritysetup format system.img system.hashtree \
+  --hash=sha256 --data-block-size=4096 --hash-block-size=4096</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/security/features/verifiedboot/dm-verity" target="_blank" rel="noopener">AOSP — Implementing dm-verity</a></li>
+      <li>📄 <a href="https://source.android.com/docs/security/features/verifiedboot/avb" target="_blank" rel="noopener">AOSP — AVB 2.0</a></li>
+      <li>📄 <a href="https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html" target="_blank" rel="noopener">Linux Kernel — dm-verity Documentation</a></li>
+      <li>📄 <a href="https://source.android.com/docs/security/features/verifiedboot/boot-flow" target="_blank" rel="noopener">AOSP — Verified Boot Flow</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="avb.html">← Previous: AVB</a>
+  <a href="slot-selection.html">Next: Slot Selection →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+
+/* Step animation */
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+
+/* Merkle tree animation */
+const status = document.getElementById('merkleStatus');
+let merkleTimer = null;
+
+function resetMerkleNodes(){
+  clearTimeout(merkleTimer);
+  document.querySelectorAll('.merkle-node').forEach(n => {
+    n.classList.remove('active','verified');
+    n.style.fill = '';
+    n.style.stroke = '';
+  });
+  document.querySelectorAll('.merkle-line').forEach(l => {
+    l.classList.remove('active','fail-line');
+  });
+  status.textContent = 'Click a button above to start the animation';
+  status.style.fill = 'var(--text-dim)';
+}
+
+function activateNode(id, delay, color){
+  return new Promise(resolve => {
+    merkleTimer = setTimeout(() => {
+      const el = document.getElementById(id);
+      if(el) { el.classList.add('active'); if(color) el.style.stroke = color; }
+      resolve();
+    }, delay);
+  });
+}
+
+function activateLine(id, delay, fail){
+  return new Promise(resolve => {
+    merkleTimer = setTimeout(() => {
+      const el = document.getElementById(id);
+      if(el) el.classList.add(fail ? 'fail-line' : 'active');
+      resolve();
+    }, delay);
+  });
+}
+
+window.merkleVerify = async function(){
+  resetMerkleNodes();
+  const d = 500;
+  status.textContent = '📖 Reading Block 1...'; status.style.fill = '#42a5f5';
+  await activateNode('mn-b1', d); await activateNode('mt-b1', 0); await activateNode('mt-b1b', 0);
+  await activateLine('ml-lr-d', d);
+
+  status.textContent = '🔢 Computing H1 = SHA-256(salt + Block1)...'; status.style.fill = '#ffa726';
+  await activateNode('mn-h1', d, '#66bb6a'); await activateNode('mt-h1', 0); await activateNode('mt-h1b', 0);
+  await activateLine('ml-l-lr', d);
+
+  status.textContent = '🔗 Verifying parent: H(H0+H1)...'; status.style.fill = '#ffa726';
+  await activateNode('mn-h0', d/2); await activateNode('mt-h0', 0); await activateNode('mt-h0b', 0);
+  await activateNode('mn-l', d, '#66bb6a'); await activateNode('mt-l', 0); await activateNode('mt-l2', 0);
+  await activateLine('ml-l-ll', d/2);
+  await activateLine('ml-r-l', d);
+
+  status.textContent = '🌳 Verifying root hash...'; status.style.fill = '#ffa726';
+  await activateNode('mn-root', d, '#66bb6a'); await activateNode('mt-root', 0); await activateNode('mt-root2', 0);
+
+  status.textContent = '✅ Verification PASSED — Block 1 is authentic'; status.style.fill = '#66bb6a';
+};
+
+window.merkleCorrupt = async function(){
+  resetMerkleNodes();
+  const d = 500;
+  status.textContent = '📖 Reading Block 2 (CORRUPTED)...'; status.style.fill = '#42a5f5';
+  await activateNode('mn-b2', d); await activateNode('mt-b2', 0); await activateNode('mt-b2b', 0);
+  const b2 = document.getElementById('mn-b2');
+  if(b2){ b2.style.fill = '#b71c1c'; b2.style.stroke = '#ef5350'; }
+  await activateLine('ml-rl-d', d);
+
+  status.textContent = '🔢 Computing H2 = SHA-256(salt + corrupted_data)...'; status.style.fill = '#ef5350';
+  await activateNode('mn-h2', d); await activateNode('mt-h2', 0); await activateNode('mt-h2b', 0);
+  const h2 = document.getElementById('mn-h2');
+  if(h2){ h2.style.fill = '#b71c1c'; h2.style.stroke = '#ef5350'; }
+  document.getElementById('ml-rl-d').classList.add('fail-line');
+  await activateLine('ml-r-rl', d, true);
+
+  status.textContent = '❌ H2 mismatch detected — hash does NOT match expected value'; status.style.fill = '#ef5350';
+  await activateNode('mn-r', d); await activateNode('mt-r', 0); await activateNode('mt-r2', 0);
+  const r = document.getElementById('mn-r');
+  if(r){ r.style.fill = '#b71c1c'; r.style.stroke = '#ef5350'; }
+
+  merkleTimer = setTimeout(() => {
+    status.textContent = '🚫 dm-verity returns -EIO to caller — block is CORRUPT'; status.style.fill = '#ef5350';
+  }, d);
+};
+
+window.merkleReset = resetMerkleNodes;
+
+/* Shared utilities */
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#merkle';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

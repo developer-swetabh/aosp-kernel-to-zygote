@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — Second-Stage init / Service Startup</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#00695c;--accent-light:#26a69a;--accent-bg:rgba(0,105,92,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+/* Service state animation */
+.svc-box{opacity:0;transition:all .6s cubic-bezier(.4,0,.2,1);transform:translateY(8px)}
+.svc-box.active{opacity:1;transform:translateY(0)}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item,.svc-box{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#services" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Service Startup</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button></div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🚀 Second-Stage init — Service Startup</h1>
+  <p class="summary">Parses the full init.rc tree, starts services by class in dependency order, and prepares the system for Zygote launch.</p>
+</header>
+
+<main class="content" role="main">
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Second-stage init:</strong> After SELinux transition, init re-parses the full <code>init.rc</code> tree with access to all mounted partitions.</li>
+      <li><strong>Service classes:</strong> Services are organized into classes (<code>core</code>, <code>main</code>, <code>late_start</code>) that start in defined order.</li>
+      <li><strong>Property triggers:</strong> Many services start in response to property changes (e.g., <code>on property:sys.boot_completed=1</code>).</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Parse Full init.rc Tree</h3>
+        <p>Second-stage init reads <code>init.rc</code> and all imported <code>*.rc</code> files from <code>/system/etc/init/</code>, <code>/vendor/etc/init/</code>, <code>/odm/etc/init/</code>. Each file defines services, triggers, and actions.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Start Property Service</h3>
+        <p>The property service (<code>property_service</code>) starts — it manages <code>setprop</code>/<code>getprop</code> calls. Properties drive trigger-based service startup.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Fire Triggers in Order</h3>
+        <p>Triggers fire in sequence: <code>early-init</code> → <code>init</code> → <code>late-init</code> → <code>post-fs</code> → <code>post-fs-data</code> → <code>boot</code>. Each trigger runs its associated action list.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Start Class core</h3>
+        <p>Essential system daemons: <code>ueventd</code> (device node manager), <code>logd</code> (logging), <code>servicemanager</code> (Binder registry), <code>hwservicemanager</code> (HIDL registry).</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <div class="step-connector"></div>
+        <h3>Start Class main</h3>
+        <p>Core system services: <code>vold</code> (volume daemon), <code>netd</code> (network daemon), <code>surfaceflinger</code> (display compositor), and <strong>zygote</strong>.</p>
+      </div>
+      <div class="step-item" data-num="6">
+        <h3>Start Class late_start</h3>
+        <p>Non-critical services that start after <code>sys.boot_completed=1</code>. These include optional vendor services, analytics daemons, and background tasks.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: Service startup sequence -->
+  <section class="section">
+    <h2><span class="s-icon">🔗</span> Service Class Startup Sequence</h2>
+    <div class="anim-controls">
+      <button onclick="svcPlay()" id="btnSvcPlay">▶ Animate Services</button>
+      <button onclick="svcReset()">↺ Reset</button>
+    </div>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 300" width="800" height="300" role="img" aria-label="Service class startup sequence" id="svcSvg">
+        <!-- Timeline -->
+        <line x1="50" y1="30" x2="750" y2="30" stroke="rgba(255,255,255,.15)" stroke-width="2"/>
+        <text x="400" y="20" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-dim)">Boot Timeline →</text>
+
+        <!-- Class core -->
+        <rect x="60" y="50" width="200" height="35" rx="6" class="svc-box" id="svc-core-bg" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1.5"/>
+        <text x="160" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#26a69a" class="svc-box" id="svc-core-t">class core</text>
+
+        <rect x="70" y="95" width="85" height="28" rx="4" class="svc-box" id="svc-ueventd" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="112" y="113" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-ueventd-t">ueventd</text>
+
+        <rect x="165" y="95" width="65" height="28" rx="4" class="svc-box" id="svc-logd" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="197" y="113" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-logd-t">logd</text>
+
+        <rect x="70" y="130" width="110" height="28" rx="4" class="svc-box" id="svc-sm" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="125" y="148" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-sm-t">servicemanager</text>
+
+        <rect x="190" y="130" width="65" height="28" rx="4" class="svc-box" id="svc-hwsm" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="222" y="148" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-hwsm-t">hwsvcmgr</text>
+
+        <!-- Class main -->
+        <rect x="290" y="50" width="220" height="35" rx="6" class="svc-box" id="svc-main-bg" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1.5"/>
+        <text x="400" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#26a69a" class="svc-box" id="svc-main-t">class main</text>
+
+        <rect x="300" y="95" width="60" height="28" rx="4" class="svc-box" id="svc-vold" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="330" y="113" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-vold-t">vold</text>
+
+        <rect x="370" y="95" width="60" height="28" rx="4" class="svc-box" id="svc-netd" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="400" y="113" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-netd-t">netd</text>
+
+        <rect x="440" y="95" width="60" height="28" rx="4" class="svc-box" id="svc-sf" fill="rgba(0,105,92,.15)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="470" y="113" text-anchor="middle" font-size="9" fill="var(--text)" class="svc-box" id="svc-sf-t">surfaceflnger</text>
+
+        <rect x="300" y="130" width="100" height="28" rx="4" class="svc-box" id="svc-zyg" fill="rgba(0,105,92,.3)" stroke="#00897b" stroke-width="2">
+          <animate attributeName="stroke-opacity" values="1;.4;1" dur="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="350" y="148" text-anchor="middle" font-size="10" font-weight="700" fill="#4dd0e1" class="svc-box" id="svc-zyg-t">🧬 zygote</text>
+
+        <!-- Class late_start -->
+        <rect x="550" y="50" width="200" height="35" rx="6" class="svc-box" id="svc-late-bg" fill="rgba(0,105,92,.2)" stroke="#26a69a" stroke-width="1" stroke-dasharray="4"/>
+        <text x="650" y="72" text-anchor="middle" font-size="12" font-weight="700" fill="#26a69a" class="svc-box" id="svc-late-t">class late_start</text>
+
+        <rect x="560" y="95" width="80" height="28" rx="4" class="svc-box" id="svc-vendor" fill="rgba(0,105,92,.1)" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+        <text x="600" y="113" text-anchor="middle" font-size="9" fill="var(--text-dim)" class="svc-box" id="svc-vendor-t">vendor svcs</text>
+
+        <rect x="650" y="95" width="90" height="28" rx="4" class="svc-box" id="svc-bg" fill="rgba(0,105,92,.1)" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+        <text x="695" y="113" text-anchor="middle" font-size="9" fill="var(--text-dim)" class="svc-box" id="svc-bg-t">background</text>
+
+        <!-- Boot complete marker -->
+        <line x1="530" y1="25" x2="530" y2="170" stroke="#ffa726" stroke-width="1" stroke-dasharray="4"/>
+        <text x="530" y="185" text-anchor="middle" font-size="9" font-weight="600" fill="#ffa726">sys.boot_completed=1</text>
+
+        <!-- Service states legend -->
+        <rect x="60" y="210" width="690" height="70" rx="8" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+        <text x="400" y="232" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-dim)">Service Lifecycle States</text>
+        <rect x="80" y="245" width="12" height="12" rx="2" fill="rgba(255,152,0,.4)"/>
+        <text x="100" y="255" font-size="9" fill="var(--text-dim)">waiting</text>
+        <rect x="180" y="245" width="12" height="12" rx="2" fill="rgba(33,150,243,.4)"/>
+        <text x="200" y="255" font-size="9" fill="var(--text-dim)">starting</text>
+        <rect x="280" y="245" width="12" height="12" rx="2" fill="rgba(76,175,80,.4)"/>
+        <text x="300" y="255" font-size="9" fill="var(--text-dim)">running</text>
+        <rect x="380" y="245" width="12" height="12" rx="2" fill="rgba(239,83,80,.4)"/>
+        <text x="400" y="255" font-size="9" fill="var(--text-dim)">stopped</text>
+        <rect x="480" y="245" width="12" height="12" rx="2" fill="rgba(158,158,158,.4)"/>
+        <text x="500" y="255" font-size="9" fill="var(--text-dim)">oneshot (exited)</text>
+        <text x="650" y="255" font-size="9" fill="var(--text-dim)">crashed → restarted by init</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- init.rc Parsing & Trigger Tree (moved from first-stage init page — this is a second-stage responsibility) -->
+  <section class="section">
+    <h2><span class="s-icon">🌲</span> init.rc Parsing &amp; Trigger Sequence</h2>
+    <p style="font-size:.84rem;color:var(--text-dim);margin-bottom:.4rem">Second-stage init parses the full <code>init.rc</code> tree by importing all <code>*.rc</code> files from mounted partitions, then fires triggers in a defined order. This is exclusively a <strong>second-stage responsibility</strong> — first-stage init never reads init.rc.</p>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 340" width="800" height="340" role="img" aria-label="init.rc trigger sequence diagram">
+        <!-- init.rc root -->
+        <rect x="300" y="10" width="200" height="50" rx="8" fill="#00695c" stroke="#26a69a" stroke-width="2"/>
+        <text x="400" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">init.rc</text>
+        <text x="400" y="48" text-anchor="middle" font-size="9" fill="#80cbc4">Main configuration file</text>
+
+        <!-- Import lines -->
+        <line x1="340" y1="60" x2="150" y2="100" stroke="#26a69a" stroke-width="1.5"/>
+        <line x1="400" y1="60" x2="400" y2="100" stroke="#26a69a" stroke-width="1.5"/>
+        <line x1="460" y1="60" x2="650" y2="100" stroke="#26a69a" stroke-width="1.5"/>
+
+        <!-- Imported files -->
+        <rect x="50" y="100" width="200" height="40" rx="6" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1"/>
+        <text x="150" y="124" text-anchor="middle" font-size="10" fill="#26a69a">init.&lt;hw&gt;.rc</text>
+
+        <rect x="300" y="100" width="200" height="40" rx="6" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1"/>
+        <text x="400" y="124" text-anchor="middle" font-size="10" fill="#26a69a">init.usb.rc</text>
+
+        <rect x="550" y="100" width="200" height="40" rx="6" fill="rgba(0,105,92,.3)" stroke="#26a69a" stroke-width="1"/>
+        <text x="650" y="124" text-anchor="middle" font-size="10" fill="#26a69a">init.zygote64.rc</text>
+
+        <!-- Trigger sequence -->
+        <text x="400" y="175" text-anchor="middle" font-size="12" font-weight="700" fill="#26a69a">Trigger Execution Order</text>
+
+        <!-- Triggers -->
+        <rect x="40" y="195" width="130" height="40" rx="6" fill="rgba(0,105,92,.2)" stroke="#00695c" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0s" repeatCount="indefinite"/>
+        </rect>
+        <text x="105" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#26a69a">early-init</text>
+
+        <line x1="170" y1="215" x2="210" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrS)"/>
+
+        <rect x="210" y="195" width="100" height="40" rx="6" fill="rgba(0,105,92,.2)" stroke="#00695c" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0.5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="260" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#26a69a">init</text>
+
+        <line x1="310" y1="215" x2="350" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrS)"/>
+
+        <rect x="350" y="195" width="110" height="40" rx="6" fill="rgba(0,105,92,.2)" stroke="#00695c" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1s" repeatCount="indefinite"/>
+        </rect>
+        <text x="405" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#26a69a">late-init</text>
+
+        <line x1="460" y1="215" x2="500" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrS)"/>
+
+        <rect x="500" y="195" width="110" height="40" rx="6" fill="rgba(0,105,92,.2)" stroke="#00695c" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="555" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#26a69a">post-fs</text>
+
+        <line x1="610" y1="215" x2="650" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrS)"/>
+
+        <rect x="650" y="195" width="100" height="40" rx="6" fill="rgba(0,105,92,.2)" stroke="#00695c" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="700" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#26a69a">boot</text>
+
+        <!-- Service class trigger note -->
+        <rect x="50" y="270" width="700" height="55" rx="8" fill="rgba(0,105,92,.08)" stroke="#26a69a" stroke-width="1" stroke-dasharray="4"/>
+        <text x="400" y="290" text-anchor="middle" font-size="10" font-weight="600" fill="#26a69a">Service class startup is triggered by these actions:</text>
+        <text x="400" y="308" text-anchor="middle" font-size="9" fill="#80cbc4">on boot → class_start core · class_start main &nbsp;&nbsp;|&nbsp;&nbsp; on property:sys.boot_completed=1 → class_start late_start</text>
+
+        <defs>
+          <marker id="arrS" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>init.rc</code></td><td>Main init configuration — defines triggers, actions, and service imports</td></tr>
+        <tr><td><code>/system/etc/init/*.rc</code></td><td>System service definitions (zygote, surfaceflinger, logd, etc.)</td></tr>
+        <tr><td><code>/vendor/etc/init/*.rc</code></td><td>Vendor/HAL service definitions</td></tr>
+        <tr><td><code>/odm/etc/init/*.rc</code></td><td>ODM-specific service definitions</td></tr>
+        <tr><td><code>servicemanager</code></td><td>Binder service registry — the central hub for IPC</td></tr>
+        <tr><td><code>hwservicemanager</code></td><td>HIDL service registry for hardware abstraction layers</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 Service Crash Loop</h4>
+        <p>If a service crashes repeatedly, init may either restart it (with backoff) or give up and set a failure property. Check <code>logcat</code> for crash dumps.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🚫 servicemanager Not Ready</h4>
+        <p>If <code>servicemanager</code> fails to start, no Binder services can register. All dependent services (including system_server) will fail.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Missing HAL</h4>
+        <p>A service depending on a HAL that isn't registered in <code>hwservicemanager</code> will hang or crash. Check <code>lshal</code> output.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">init.rc</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Example init.rc trigger and service definition (second-stage)
+on early-init
+    mount tmpfs tmpfs /dev mode=0755
+
+on init
+    mkdir /mnt/vendor/persist 0771 root system
+
+on late-init
+    trigger post-fs
+    trigger boot
+
+on boot
+    class_start core
+    class_start main
+
+on property:sys.boot_completed=1
+    class_start late_start
+
+service zygote /system/bin/app_process64 -Xzygote /system/bin \
+    --zygote --start-system-server
+    class main
+    priority -20
+    user root
+    group root readproc reserved_disk
+    socket zygote stream 660 root system</code></pre>
+    </div>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># List all init services and their status
+adb shell getprop | grep init.svc
+
+# Check a specific service
+adb shell getprop init.svc.zygote    # running, stopped, restarting
+
+# List registered Binder services
+adb shell service list
+
+# List registered HAL services
+adb shell lshal
+
+# View service startup timing
+adb shell dmesg | grep "init: starting service"</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/configuration/init" target="_blank" rel="noopener">AOSP — Init</a></li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/README.md" target="_blank" rel="noopener">Init README (AOSP source)</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/aidl/overview" target="_blank" rel="noopener">AOSP — AIDL / Binder</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="sepolicy.html">← Previous: SELinux</a>
+  <a href="zygote.html">Next: Zygote →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+
+/* Service startup animation */
+const svcOrder=['svc-core-bg','svc-core-t','svc-ueventd','svc-ueventd-t','svc-logd','svc-logd-t','svc-sm','svc-sm-t','svc-hwsm','svc-hwsm-t','svc-main-bg','svc-main-t','svc-vold','svc-vold-t','svc-netd','svc-netd-t','svc-sf','svc-sf-t','svc-zyg','svc-zyg-t','svc-late-bg','svc-late-t','svc-vendor','svc-vendor-t','svc-bg','svc-bg-t'];
+let svcIdx=-1,svcPlaying=false,svcTimer=null;
+
+window.svcPlay=function(){
+  if(svcPlaying)return;svcPlaying=true;
+  (function t(){
+    if(!svcPlaying)return;
+    if(svcIdx>=svcOrder.length-1){svcPlaying=false;return}
+    svcIdx++;
+    const el=document.getElementById(svcOrder[svcIdx]);
+    if(el)el.classList.add('active');
+    svcTimer=setTimeout(t,150);
+  })();
+};
+window.svcReset=function(){
+  svcPlaying=false;clearTimeout(svcTimer);
+  svcOrder.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active')});
+  svcIdx=-1;
+};
+
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#services';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

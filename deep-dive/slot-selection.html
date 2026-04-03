@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — Slot Selection (A/B)</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#1565c0;--accent-light:#42a5f5;--accent-bg:rgba(21,101,192,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#slot" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Slot Selection</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button></div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🔀 Slot Selection (A/B)</h1>
+  <p class="summary">Reads slot metadata and selects the healthy, active slot — enabling seamless OTA updates with instant rollback.</p>
+</header>
+
+<main class="content" role="main">
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>A/B partitions:</strong> Every critical partition exists in two copies: <code>system_a</code>/<code>system_b</code>, <code>vendor_a</code>/<code>vendor_b</code>, etc.</li>
+      <li><strong>Seamless updates:</strong> OTA writes to the inactive slot while the device runs normally. On reboot, the bootloader switches to the updated slot.</li>
+      <li><strong>Rollback safety:</strong> If the new slot fails to boot (after 7 attempts), it's marked unbootable and the bootloader falls back to the previous slot.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Read Boot Control Metadata</h3>
+        <p>ABL reads the boot control structure from the <code>misc</code> partition. This contains per-slot metadata: <code>priority</code>, <code>tries_remaining</code>, <code>successful_boot</code>, <code>active</code>.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Evaluate Slot Health</h3>
+        <p>For each slot, check: Is it marked <code>bootable</code>? Does it have <code>tries_remaining > 0</code> or <code>successful_boot == true</code>? Unbootable slots are skipped.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Select Highest-Priority Bootable Slot</h3>
+        <p>The slot with the highest priority that is still bootable is selected. After an OTA, the newly written slot gets the highest priority.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Decrement tries_remaining</h3>
+        <p>If <code>successful_boot</code> is not yet set, decrement <code>tries_remaining</code>. When it reaches 0 and <code>successful_boot</code> is still false, mark the slot <code>unbootable</code>.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <h3>Set Kernel Slot Suffix</h3>
+        <p>Pass <code>androidboot.slot_suffix=_a</code> (or <code>_b</code>) to the kernel command line. All partition references use this suffix.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: A/B slot decision -->
+  <section class="section">
+    <h2><span class="s-icon">🔗</span> A/B Slot Decision Flow</h2>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 350" width="800" height="350" role="img" aria-label="A/B slot selection decision flow">
+        <!-- misc partition -->
+        <rect x="280" y="10" width="240" height="50" rx="8" fill="var(--accent)" stroke="var(--accent-light)" stroke-width="2"/>
+        <text x="400" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">misc partition</text>
+        <text x="400" y="48" text-anchor="middle" font-size="9" fill="#bbdefb">Boot control metadata</text>
+
+        <!-- Arrows to slots -->
+        <line x1="340" y1="60" x2="200" y2="100" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+        <line x1="460" y1="60" x2="600" y2="100" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- Slot A -->
+        <rect x="80" y="100" width="240" height="90" rx="8" fill="rgba(21,101,192,.25)" stroke="#42a5f5" stroke-width="2">
+          <animate attributeName="stroke-opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="200" y="125" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Slot A</text>
+        <text x="200" y="145" text-anchor="middle" font-size="10" fill="#90caf9">priority: 15 · active: true</text>
+        <text x="200" y="162" text-anchor="middle" font-size="10" fill="#90caf9">successful_boot: true</text>
+        <text x="200" y="179" text-anchor="middle" font-size="10" fill="#66bb6a">✅ BOOTABLE</text>
+
+        <!-- Slot B -->
+        <rect x="480" y="100" width="240" height="90" rx="8" fill="rgba(21,101,192,.15)" stroke="#42a5f5" stroke-width="1.5" stroke-dasharray="4"/>
+        <text x="600" y="125" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">Slot B</text>
+        <text x="600" y="145" text-anchor="middle" font-size="10" fill="#90caf9">priority: 14 · active: false</text>
+        <text x="600" y="162" text-anchor="middle" font-size="10" fill="#90caf9">tries_remaining: 7</text>
+        <text x="600" y="179" text-anchor="middle" font-size="10" fill="#ffa726">⏳ PENDING (OTA applied)</text>
+
+        <!-- Decision -->
+        <line x1="200" y1="190" x2="200" y2="240" stroke="#66bb6a" stroke-width="2" marker-end="url(#arrG)"/>
+        <rect x="100" y="240" width="200" height="45" rx="8" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="2"/>
+        <text x="200" y="260" text-anchor="middle" font-size="12" font-weight="700" fill="#66bb6a">✅ Selected: Slot A</text>
+        <text x="200" y="276" text-anchor="middle" font-size="9" fill="#a5d6a7">androidboot.slot_suffix=_a</text>
+
+        <!-- Fallback scenario -->
+        <rect x="420" y="240" width="320" height="90" rx="8" fill="rgba(239,83,80,.1)" stroke="#ef5350" stroke-width="1" stroke-dasharray="4"/>
+        <text x="580" y="262" text-anchor="middle" font-size="11" font-weight="600" fill="#ef5350">Fallback Scenario</text>
+        <text x="580" y="280" text-anchor="middle" font-size="9" fill="#ef9a9a">If Slot A becomes unbootable after 7 failed</text>
+        <text x="580" y="293" text-anchor="middle" font-size="9" fill="#ef9a9a">boot attempts → switch to Slot B.</text>
+        <text x="580" y="310" text-anchor="middle" font-size="9" fill="#ef9a9a">If both unbootable → enter recovery/fastboot.</text>
+
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+          <marker id="arrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#66bb6a"/></marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File / Artifact</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>misc</code> partition</td><td>Stores boot control metadata (slot A/B state, retries, success flags)</td></tr>
+        <tr><td><code>android.hardware.boot</code> HAL</td><td>Abstraction layer for reading/writing slot metadata from userspace</td></tr>
+        <tr><td><code>bootctl</code></td><td>Command-line tool to query/set slot status from Android shell</td></tr>
+        <tr><td><code>update_engine</code></td><td>OTA daemon that writes to the inactive slot and marks it for boot</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 Both Slots Unbootable</h4>
+        <p>Both slots exhausted their retry count without <code>successful_boot</code>. Device enters fastboot/recovery — requires manual reflash.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ OTA Slot Not Marked Active</h4>
+        <p>If <code>update_engine</code> crashes before marking the new slot active, the device continues booting from the old slot on next reboot.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Check current slot
+adb shell getprop ro.boot.slot_suffix    # _a or _b
+
+# Query slot status via bootctl
+adb shell bootctl get-current-slot
+adb shell bootctl get-suffix 0           # _a
+adb shell bootctl is-slot-bootable 0     # 1 = yes
+adb shell bootctl is-slot-marked-successful 0
+
+# Via fastboot
+fastboot getvar current-slot
+fastboot getvar slot-count
+fastboot --set-active=b                  # Switch to slot B</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">AOSP — A/B System Updates</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/ota/ab/ab_implement" target="_blank" rel="noopener">AOSP — Implementing A/B Updates</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="merkle-fail.html">← Previous: Merkle Tree</a>
+  <a href="mount.html">Next: Mount Images →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#slot';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

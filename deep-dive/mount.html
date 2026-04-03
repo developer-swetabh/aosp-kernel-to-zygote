@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — Mount Filesystem Images</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#1565c0;--accent-light:#42a5f5;--accent-bg:rgba(21,101,192,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#mount" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>Mount Images</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button></div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>💾 Mount Filesystem Images</h1>
+  <p class="summary">Dynamic partitions carved from the super partition are mounted as the root filesystem — enabling the full Android userspace.</p>
+</header>
+
+<main class="content" role="main">
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>Dynamic partitions:</strong> Since Android 10, all system images live as logical volumes inside a single physical <code>super</code> partition, managed by <code>dm-linear</code>.</li>
+      <li><strong>Mount sequence:</strong> First-stage init mounts early partitions (<code>/system</code>, <code>/vendor</code>); second-stage init mounts the rest and applies overlays.</li>
+      <li><strong>Root switch:</strong> After mounting, the root filesystem switches from ramdisk to <code>/system</code> (system-as-root).</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Parse Partition Metadata</h3>
+        <p>Read the LP (Logical Partition) metadata from the first 4 KiB of the <code>super</code> partition. This describes the layout: extent ranges, partition names, group constraints.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Create dm-linear Targets</h3>
+        <p>For each logical partition, <code>fs_mgr</code> creates a device-mapper linear target that maps a contiguous virtual block device to physical extents within <code>super</code>.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Layer dm-verity</h3>
+        <p>On top of each dm-linear device, dm-verity is added (if the partition has an AVB hashtree descriptor). This makes reads go through: dm-verity → dm-linear → physical block.</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Mount Partitions</h3>
+        <p>Mount each verified device at its mount point: <code>/system</code>, <code>/vendor</code>, <code>/product</code>, <code>/system_ext</code>, <code>/odm</code>. All mounted read-only with <code>barrier=1</code>.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <h3>Apply Overlays &amp; Switch Root</h3>
+        <p>Vendor overlays (e.g., runtime resource overlays on <code>/vendor</code>) are applied. Root filesystem switches from ramdisk to <code>/system</code> (system-as-root since Android 10).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive SVG: Mounting Process -->
+  <section class="section">
+    <h2><span class="s-icon">🔗</span> Dynamic Partition &amp; Mount Architecture</h2>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 360" width="800" height="360" role="img" aria-label="Dynamic partition mounting architecture">
+        <!-- Physical super partition -->
+        <rect x="30" y="10" width="740" height="50" rx="8" fill="rgba(21,101,192,.2)" stroke="#1e88e5" stroke-width="2"/>
+        <text x="400" y="30" text-anchor="middle" font-size="14" font-weight="700" fill="#42a5f5">📦 super partition (physical block device)</text>
+        <text x="400" y="48" text-anchor="middle" font-size="9" fill="#90caf9">Contains LP metadata + all logical partition extents</text>
+
+        <!-- LP metadata -->
+        <rect x="40" y="22" width="80" height="28" rx="4" fill="rgba(255,167,38,.3)" stroke="#ffa726" stroke-width="1"/>
+        <text x="80" y="40" text-anchor="middle" font-size="8" fill="#ffa726">LP meta</text>
+
+        <!-- Arrows down -->
+        <text x="400" y="82" text-anchor="middle" font-size="11" font-weight="600" fill="#42a5f5">↓ dm-linear carving ↓</text>
+
+        <!-- dm-linear devices -->
+        <rect x="30" y="95" width="165" height="45" rx="6" fill="rgba(21,101,192,.3)" stroke="#42a5f5" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values=".4;1;.4" dur="3s" begin="0s" repeatCount="indefinite"/>
+        </rect>
+        <text x="112" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">system</text>
+        <text x="112" y="130" text-anchor="middle" font-size="8" fill="#90caf9">dm-linear → /system</text>
+
+        <rect x="215" y="95" width="140" height="45" rx="6" fill="rgba(21,101,192,.3)" stroke="#42a5f5" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values=".4;1;.4" dur="3s" begin=".5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="285" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">vendor</text>
+        <text x="285" y="130" text-anchor="middle" font-size="8" fill="#90caf9">dm-linear → /vendor</text>
+
+        <rect x="375" y="95" width="130" height="45" rx="6" fill="rgba(21,101,192,.3)" stroke="#42a5f5" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values=".4;1;.4" dur="3s" begin="1s" repeatCount="indefinite"/>
+        </rect>
+        <text x="440" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">product</text>
+        <text x="440" y="130" text-anchor="middle" font-size="8" fill="#90caf9">dm-linear → /product</text>
+
+        <rect x="525" y="95" width="110" height="45" rx="6" fill="rgba(21,101,192,.3)" stroke="#42a5f5" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values=".4;1;.4" dur="3s" begin="1.5s" repeatCount="indefinite"/>
+        </rect>
+        <text x="580" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">odm</text>
+        <text x="580" y="130" text-anchor="middle" font-size="8" fill="#90caf9">dm-linear → /odm</text>
+
+        <rect x="655" y="95" width="120" height="45" rx="6" fill="rgba(21,101,192,.3)" stroke="#42a5f5" stroke-width="1.5">
+          <animate attributeName="stroke-opacity" values=".4;1;.4" dur="3s" begin="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="715" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#fff">system_ext</text>
+        <text x="715" y="130" text-anchor="middle" font-size="8" fill="#90caf9">dm-linear</text>
+
+        <!-- dm-verity layer -->
+        <rect x="30" y="155" width="745" height="30" rx="4" fill="rgba(230,81,0,.2)" stroke="#fb8c00" stroke-width="1.5"/>
+        <text x="400" y="174" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">🛡️ dm-verity layer (transparent block-level integrity)</text>
+
+        <!-- Mount points -->
+        <text x="400" y="210" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">↓ mount (ro, barrier=1) ↓</text>
+
+        <rect x="30" y="225" width="165" height="40" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1.5"/>
+        <text x="112" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">/system</text>
+
+        <rect x="215" y="225" width="140" height="40" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1.5"/>
+        <text x="285" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">/vendor</text>
+
+        <rect x="375" y="225" width="130" height="40" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1.5"/>
+        <text x="440" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">/product</text>
+
+        <rect x="525" y="225" width="110" height="40" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1.5"/>
+        <text x="580" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">/odm</text>
+
+        <rect x="655" y="225" width="120" height="40" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="1.5"/>
+        <text x="715" y="249" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">/system_ext</text>
+
+        <!-- I/O path annotation -->
+        <rect x="200" y="290" width="400" height="55" rx="8" fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.1)" stroke-width="1"/>
+        <text x="400" y="310" text-anchor="middle" font-size="10" font-weight="600" fill="var(--text-dim)">I/O Read Path</text>
+        <text x="400" y="328" text-anchor="middle" font-size="9" fill="var(--text-dim)">App → VFS → dm-verity (verify hash) → dm-linear (map extent) → block device</text>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 LP Metadata Corrupt</h4>
+        <p>If logical partition metadata in <code>super</code> is corrupt, no partitions can be carved. Device fails to mount <code>/system</code> and boot stalls.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ Filesystem Mismatch</h4>
+        <p>fstab says <code>ext4</code> but the partition is formatted as <code>f2fs</code> (or vice versa). Mount fails with "wrong fs type" error.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># View mounted partitions
+adb shell mount | grep -E "system|vendor|product|odm"
+
+# Check dm device mapping
+adb shell dmctl table system
+adb shell dmctl table vendor
+
+# View logical partition layout
+adb shell lpdump    # Shows super partition metadata
+
+# Check dynamic partition groups
+adb shell cat /dev/block/by-name/super | head -c 4096 | xxd | head</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/core/ota/dynamic_partitions" target="_blank" rel="noopener">AOSP — Dynamic Partitions</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images" target="_blank" rel="noopener">AOSP — Partitions and Images</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="slot-selection.html">← Previous: Slot Selection</a>
+  <a href="sepolicy.html">Next: SELinux / sepolicy →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#mount';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

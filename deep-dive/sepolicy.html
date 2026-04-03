@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Dive — SELinux / sepolicy Setup</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#6a1b9a;--accent-light:#ab47bc;--accent-bg:rgba(106,27,154,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
+.top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
+.top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.top-nav a:hover{background:var(--bg3)}
+.breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
+.nav-right{margin-left:auto;display:flex;gap:.5rem}
+.nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.nav-right button:hover{background:var(--bg3)}
+.page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
+.page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
+.page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
+.content{max-width:900px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2rem}
+.section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
+.section h2 .s-icon{font-size:1.1rem}
+.overview-list{list-style:none;padding:0}
+.overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
+.step-flow{position:relative;padding-left:2rem}
+.step-item{position:relative;padding:.8rem 1rem;margin-bottom:1rem;background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.4,0,.2,1)}
+.step-item.visible{opacity:1;transform:translateX(0)}
+.step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
+.step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
+.files-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
+.files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
+.files-table tr:hover td{background:rgba(255,255,255,.03)}
+.files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+@media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
+.fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
+.fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
+.fail-card p{font-size:.8rem;color:var(--text-dim)}
+.fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
+details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
+details summary:hover{background:rgba(255,255,255,.03)}
+details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
+details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
+.svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
+.svg-canvas svg{display:block;margin:0 auto}
+.code-block{position:relative;margin:.8rem 0}
+.code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
+.code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
+.code-block .copy-btn{position:absolute;top:.4rem;right:4rem;cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg3);color:var(--text);padding:.15rem .5rem;border-radius:4px;font-size:.7rem;opacity:0;transition:opacity .2s}
+.code-block:hover .copy-btn{opacity:1}
+.ref-list{list-style:none;padding:0}
+.ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
+.ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
+.anim-controls button:hover{background:var(--bg3)}
+.page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
+.page-nav a{color:var(--accent-light);text-decoration:none;font-size:.9rem;display:flex;align-items:center;gap:.3rem;padding:.5rem 1rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
+.page-nav a:hover{background:var(--bg3)}
+footer{text-align:center;padding:1.5rem;font-size:.75rem;color:var(--text-dim);border-top:1px solid rgba(255,255,255,.06)}
+footer a{color:#60a5fa}
+@media print{body{background:#fff;color:#000}.top-nav,.anim-controls,.nav-right{display:none}.step-item{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body>
+
+<nav class="top-nav" role="navigation" aria-label="Page navigation">
+  <a href="../index.html#sepolicy" aria-label="Back to overview">← Overview</a>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>SELinux / sepolicy</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button></div>
+</nav>
+
+<header class="page-header" role="banner">
+  <div class="color-bar"></div>
+  <h1>🔒 SELinux / sepolicy Setup</h1>
+  <p class="summary">Loads mandatory access control policy, labels all filesystems, and transitions init to enforcing mode — the security foundation for all of Android.</p>
+</header>
+
+<main class="content" role="main">
+  <section class="section">
+    <h2><span class="s-icon">📋</span> Overview</h2>
+    <ul class="overview-list">
+      <li><strong>MAC enforcement:</strong> SELinux provides mandatory access control — even root processes are constrained by policy. Every process, file, and socket has a security context.</li>
+      <li><strong>Policy sources:</strong> Policy fragments (CIL) from <code>/system</code> and <code>/vendor</code> are compiled at build time into a single binary policy.</li>
+      <li><strong>Init transition:</strong> After loading policy, init re-executes itself in the <code>u:r:init:s0</code> domain, beginning second-stage init with full SELinux enforcement.</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+    <div class="anim-controls">
+      <button onclick="animPlay()">▶ Play</button>
+      <button onclick="animReset()">↺ Reset</button>
+    </div>
+    <div class="step-flow" id="stepFlow">
+      <div class="step-item" data-num="1">
+        <div class="step-connector"></div>
+        <h3>Mount selinuxfs</h3>
+        <p>First-stage init mounts <code>/sys/fs/selinux</code> (selinuxfs). This kernel pseudo-filesystem is the interface between userspace and the kernel's SELinux subsystem.</p>
+      </div>
+      <div class="step-item" data-num="2">
+        <div class="step-connector"></div>
+        <h3>Load Compiled Policy</h3>
+        <p>Load the precompiled binary policy from <code>/vendor/etc/selinux/precompiled_sepolicy</code> (or <code>/system/etc/selinux/</code>). The policy was compiled from CIL fragments at build time using <code>secilc</code>.</p>
+      </div>
+      <div class="step-item" data-num="3">
+        <div class="step-connector"></div>
+        <h3>Set Enforcing Mode</h3>
+        <p>Write <code>1</code> to <code>/sys/fs/selinux/enforce</code>. From this point, all access decisions are enforced. Violations result in denied operations (logged as <code>avc: denied</code>).</p>
+      </div>
+      <div class="step-item" data-num="4">
+        <div class="step-connector"></div>
+        <h3>Label Filesystems (restorecon)</h3>
+        <p>Run <code>restorecon -R</code> on all mounted filesystems to apply file security contexts from <code>file_contexts</code>. This ensures every file has the correct SELinux label.</p>
+      </div>
+      <div class="step-item" data-num="5">
+        <h3>Re-execute init in SELinux Domain</h3>
+        <p>Init calls <code>execv("/init")</code> with <code>selinux_android_restorecon("/init")</code>. The kernel transitions init to <code>u:r:init:s0</code> — the proper domain for second-stage init.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SVG: SELinux policy flow -->
+  <section class="section">
+    <h2><span class="s-icon">🔗</span> SELinux Policy Loading Flow</h2>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 280" width="800" height="280" role="img" aria-label="SELinux policy loading flow">
+        <!-- System CIL -->
+        <rect x="30" y="20" width="180" height="50" rx="6" fill="rgba(106,27,154,.3)" stroke="#ab47bc" stroke-width="1.5"/>
+        <text x="120" y="42" text-anchor="middle" font-size="11" font-weight="600" fill="#ce93d8">System CIL Fragments</text>
+        <text x="120" y="57" text-anchor="middle" font-size="9" fill="#e1bee7">/system/etc/selinux/</text>
+
+        <!-- Vendor CIL -->
+        <rect x="30" y="85" width="180" height="50" rx="6" fill="rgba(106,27,154,.3)" stroke="#ab47bc" stroke-width="1.5"/>
+        <text x="120" y="107" text-anchor="middle" font-size="11" font-weight="600" fill="#ce93d8">Vendor CIL Fragments</text>
+        <text x="120" y="122" text-anchor="middle" font-size="9" fill="#e1bee7">/vendor/etc/selinux/</text>
+
+        <!-- Build-time compilation -->
+        <line x1="210" y1="45" x2="280" y2="75" stroke="#ab47bc" stroke-width="1.5"/>
+        <line x1="210" y1="110" x2="280" y2="80" stroke="#ab47bc" stroke-width="1.5"/>
+        <rect x="280" y="50" width="160" height="55" rx="8" fill="#6a1b9a" stroke="#ab47bc" stroke-width="2"/>
+        <text x="360" y="73" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">secilc (build)</text>
+        <text x="360" y="90" text-anchor="middle" font-size="9" fill="#e1bee7">CIL → binary policy</text>
+
+        <!-- Arrow to precompiled -->
+        <line x1="440" y1="78" x2="500" y2="78" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+
+        <!-- Precompiled policy -->
+        <rect x="500" y="50" width="260" height="55" rx="8" fill="#7b1fa2" stroke="#ba68c8" stroke-width="2">
+          <animate attributeName="stroke-opacity" values="1;.4;1" dur="2s" repeatCount="indefinite"/>
+        </rect>
+        <text x="630" y="73" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">precompiled_sepolicy</text>
+        <text x="630" y="90" text-anchor="middle" font-size="9" fill="#e1bee7">Binary policy loaded at boot</text>
+
+        <!-- Runtime flow -->
+        <line x1="630" y1="105" x2="630" y2="140" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+
+        <rect x="500" y="140" width="260" height="45" rx="6" fill="rgba(106,27,154,.2)" stroke="#8e24aa" stroke-width="1.5"/>
+        <text x="630" y="160" text-anchor="middle" font-size="11" font-weight="600" fill="#ce93d8">🔒 selinux_android_load_policy()</text>
+        <text x="630" y="176" text-anchor="middle" font-size="9" fill="#e1bee7">Write to /sys/fs/selinux/load</text>
+
+        <line x1="630" y1="185" x2="630" y2="215" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+
+        <rect x="500" y="215" width="260" height="45" rx="6" fill="rgba(76,175,80,.2)" stroke="#66bb6a" stroke-width="2"/>
+        <text x="630" y="235" text-anchor="middle" font-size="11" font-weight="600" fill="#66bb6a">✅ Enforcing Mode Active</text>
+        <text x="630" y="250" text-anchor="middle" font-size="9" fill="#a5d6a7">All access decisions enforced</text>
+
+        <!-- file_contexts -->
+        <rect x="30" y="170" width="250" height="50" rx="6" fill="rgba(106,27,154,.15)" stroke="#8e24aa" stroke-width="1" stroke-dasharray="4"/>
+        <text x="155" y="192" text-anchor="middle" font-size="10" font-weight="600" fill="#ce93d8">📄 file_contexts</text>
+        <text x="155" y="208" text-anchor="middle" font-size="9" fill="#e1bee7">Regex → SELinux label mapping</text>
+
+        <line x1="280" y1="195" x2="500" y2="162" stroke="#8e24aa" stroke-width="1" stroke-dasharray="3"/>
+
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker>
+        </defs>
+      </svg>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table">
+      <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><code>precompiled_sepolicy</code></td><td>Binary SELinux policy loaded by init at boot</td></tr>
+        <tr><td><code>file_contexts</code></td><td>Maps file paths (regex) to SELinux security contexts</td></tr>
+        <tr><td><code>property_contexts</code></td><td>Maps Android system properties to SELinux contexts</td></tr>
+        <tr><td><code>service_contexts</code></td><td>Maps Binder service names to SELinux contexts</td></tr>
+        <tr><td><code>/sys/fs/selinux/enforce</code></td><td>Kernel interface — read/write enforcing mode (1 = enforce, 0 = permissive)</td></tr>
+        <tr><td><code>seapp_contexts</code></td><td>Maps app UID/package to SELinux domain at process creation</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+    <div class="fail-cards">
+      <div class="fail-card">
+        <h4>🚫 Policy Version Mismatch</h4>
+        <p>If system and vendor policy fragments are from different Android versions, <code>secilc</code> compilation may fail or produce a policy that the kernel rejects.</p>
+      </div>
+      <div class="fail-card">
+        <h4>🚫 avc: denied (Enforcing)</h4>
+        <p>A process tries an action not allowed by policy. The operation is blocked. Check <code>adb logcat | grep avc</code> for the denial details.</p>
+      </div>
+      <div class="fail-card warn">
+        <h4>⚡ restorecon Failure</h4>
+        <p>If <code>file_contexts</code> patterns don't match actual file paths, files keep incorrect labels. Services may fail to access them.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block">
+      <span class="lang-tag">bash</span>
+      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Check SELinux status
+adb shell getenforce    # Enforcing or Permissive
+
+# View security context of a process
+adb shell ps -eZ | grep init
+# u:r:init:s0  root  1  0  init
+
+# Check file security context
+adb shell ls -Z /system/bin/app_process64
+
+# Analyze AVC denials
+adb logcat | grep "avc: denied"
+
+# Convert denial to allow rule (dev only)
+adb logcat | grep avc | audit2allow -p policy</code></pre>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="s-icon">📖</span> References</h2>
+    <ul class="ref-list">
+      <li>📄 <a href="https://source.android.com/docs/security/features/selinux" target="_blank" rel="noopener">AOSP — SELinux</a></li>
+      <li>📄 <a href="https://source.android.com/docs/security/features/selinux/implement" target="_blank" rel="noopener">AOSP — Implementing SELinux</a></li>
+      <li>📄 <a href="https://selinuxproject.org/page/Main_Page" target="_blank" rel="noopener">SELinux Project</a></li>
+    </ul>
+  </section>
+</main>
+
+<nav class="page-nav" aria-label="Page navigation">
+  <a href="mount.html">← Previous: Mount Images</a>
+  <a href="services.html">Next: Service Startup →</a>
+</nav>
+
+<footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
+
+<script>
+(function(){
+"use strict";
+const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
+function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
+function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const f=document.getElementById('stepFlow');if(f)obs.observe(f);
+window.toggleHC=function(){document.body.classList.toggle('hc')};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#sepolicy';if(e.key==='h'||e.key==='H')toggleHC()});
+})();
+</script>
+</body>
+</html>

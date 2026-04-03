@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Deep Dive — init (First Stage / Ramdisk)</title>
+<title>Deep Dive — First-Stage init (Ramdisk)</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--text:#e2e8f0;--text-dim:#94a3b8;--accent:#ef6c00;--accent-light:#ffa726;--accent-bg:rgba(239,108,0,.15);--radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4)}
-body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.6}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;line-height:1.7}
 body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
 .top-nav{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.5rem;background:var(--bg2);border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;z-index:100}
 .top-nav a{color:var(--accent-light);text-decoration:none;font-size:.85rem;display:flex;align-items:center;gap:.3rem;padding:.3rem .6rem;border-radius:6px;border:1px solid rgba(255,255,255,.1);transition:all .15s}
-.top-nav a:hover{background:var(--bg3)}
+.top-nav a:hover{background:var(--bg3);border-color:rgba(255,255,255,.2)}
 .breadcrumb{font-size:.8rem;color:var(--text-dim)}.breadcrumb span{margin:0 .4rem}
 .nav-right{margin-left:auto;display:flex;gap:.5rem}
 .nav-right button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.3rem .7rem;border-radius:6px;font-size:.8rem;transition:all .15s}
@@ -19,11 +19,18 @@ body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
 .page-header{text-align:center;padding:2.5rem 1.5rem 1.5rem;border-bottom:3px solid var(--accent)}
 .page-header .color-bar{width:60px;height:6px;background:var(--accent);border-radius:3px;margin:0 auto .8rem}
 .page-header h1{font-size:1.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;gap:.5rem}
-.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
-.content{max-width:900px;margin:0 auto;padding:1.5rem}
-.section{margin-bottom:2rem}
+.page-header .summary{color:var(--text-dim);margin-top:.4rem;font-size:.95rem;max-width:720px;margin-left:auto;margin-right:auto}
+.content{max-width:920px;margin:0 auto;padding:1.5rem}
+.section{margin-bottom:2.5rem}
 .section h2{font-size:1.2rem;font-weight:700;margin-bottom:.8rem;padding-bottom:.4rem;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;gap:.5rem}
 .section h2 .s-icon{font-size:1.1rem}
+.mentor{background:linear-gradient(135deg,rgba(239,108,0,.12),rgba(255,167,38,.08));border:1px solid rgba(255,167,38,.25);border-radius:var(--radius);padding:1rem 1.2rem;margin:.8rem 0;font-size:.88rem;line-height:1.65;color:var(--text)}
+.mentor::before{content:'💡 ';font-size:1.1rem}
+.mentor strong{color:var(--accent-light)}
+.mentor code{background:rgba(0,0,0,.25);padding:.1rem .35rem;border-radius:3px;font-size:.8rem}
+.why{background:linear-gradient(135deg,rgba(33,150,243,.1),rgba(66,165,245,.06));border:1px solid rgba(66,165,245,.25);border-radius:var(--radius);padding:.8rem 1rem;margin:.6rem 0;font-size:.84rem;line-height:1.6;color:var(--text)}
+.why::before{content:'🔑 Why this matters: ';font-weight:700;color:#42a5f5}
+.why code{background:rgba(0,0,0,.25);padding:.1rem .35rem;border-radius:3px;font-size:.78rem}
 .overview-list{list-style:none;padding:0}
 .overview-list li{padding:.6rem .8rem;margin-bottom:.4rem;background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;font-size:.9rem}
 .step-flow{position:relative;padding-left:2rem}
@@ -31,19 +38,28 @@ body.hc{--bg:#000;--bg2:#111;--bg3:#222;--text:#fff;--text-dim:#ccc}
 .step-item.visible{opacity:1;transform:translateX(0)}
 .step-item::before{content:attr(data-num);position:absolute;left:-2rem;top:.8rem;width:1.6rem;height:1.6rem;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700}
 .step-item h3{font-size:.95rem;font-weight:600;margin-bottom:.3rem}
-.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.5}
+.step-item p{font-size:.82rem;color:var(--text-dim);line-height:1.55}
+.step-item .cite{font-size:.72rem;color:#60a5fa;margin-top:.3rem;display:block}
+.step-item .cite a{color:#60a5fa;text-decoration:none}
+.step-item .cite a:hover{text-decoration:underline}
 .step-connector{position:absolute;left:calc(-2rem + .75rem);top:2.4rem;bottom:-.5rem;width:2px;background:rgba(255,255,255,.1)}
 .files-table{width:100%;border-collapse:collapse;font-size:.85rem}
 .files-table th{text-align:left;padding:.5rem .8rem;background:var(--bg3);font-weight:600;border-bottom:2px solid var(--accent)}
 .files-table td{padding:.5rem .8rem;border-bottom:1px solid rgba(255,255,255,.06)}
 .files-table tr:hover td{background:rgba(255,255,255,.03)}
 .files-table code{background:rgba(0,0,0,.3);padding:.1rem .4rem;border-radius:3px;font-size:.8rem}
+.file-icon{margin-right:.3rem}
 .fail-cards{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
 @media(max-width:640px){.fail-cards{grid-template-columns:1fr}}
 .fail-card{padding:.8rem 1rem;background:var(--bg2);border-radius:var(--radius);border-left:3px solid #ef5350}
 .fail-card h4{font-size:.85rem;font-weight:600;color:#ef5350;margin-bottom:.3rem}
 .fail-card p{font-size:.8rem;color:var(--text-dim)}
 .fail-card.warn{border-left-color:#ffa726}.fail-card.warn h4{color:#ffa726}
+.checklist{list-style:none;padding:0}
+.checklist li{padding:.5rem .8rem;margin-bottom:.35rem;background:var(--bg2);border-radius:6px;font-size:.84rem;border:1px solid rgba(255,255,255,.06);display:flex;align-items:flex-start;gap:.5rem}
+.checklist li::before{content:'☐';font-size:1rem;flex-shrink:0;margin-top:.05rem}
+.checklist li code{background:rgba(0,0,0,.3);padding:.1rem .35rem;border-radius:3px;font-size:.78rem}
+.checklist li .desc{color:var(--text-dim);font-size:.78rem;display:block;margin-top:.15rem}
 details{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);margin-bottom:.8rem}
 details summary{padding:.8rem 1rem;cursor:pointer;font-weight:600;font-size:.9rem;display:flex;align-items:center;gap:.5rem}
 details summary:hover{background:rgba(255,255,255,.03)}
@@ -51,6 +67,7 @@ details[open] summary{border-bottom:1px solid rgba(255,255,255,.06)}
 details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);line-height:1.6}
 .svg-canvas{background:var(--bg2);border-radius:var(--radius);border:1px solid rgba(255,255,255,.08);padding:1rem;margin:1rem 0;overflow-x:auto}
 .svg-canvas svg{display:block;margin:0 auto}
+.svg-caption{text-align:center;font-size:.78rem;color:var(--text-dim);margin-top:.4rem;font-style:italic}
 .code-block{position:relative;margin:.8rem 0}
 .code-block pre{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:var(--radius);padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;color:#e6edf3;font-family:'Fira Code','Cascadia Code',monospace}
 .code-block .lang-tag{position:absolute;top:.4rem;right:.4rem;font-size:.65rem;color:var(--text-dim);background:rgba(255,255,255,.08);padding:.1rem .5rem;border-radius:3px}
@@ -59,7 +76,7 @@ details .details-body{padding:.8rem 1rem;font-size:.85rem;color:var(--text-dim);
 .ref-list{list-style:none;padding:0}
 .ref-list li{padding:.4rem 0;font-size:.82rem;border-bottom:1px solid rgba(255,255,255,.04)}
 .ref-list a{color:#60a5fa;text-decoration:none}.ref-list a:hover{text-decoration:underline}
-.anim-controls{display:flex;gap:.5rem;margin:.8rem 0}
+.anim-controls{display:flex;gap:.5rem;margin:.8rem 0;flex-wrap:wrap}
 .anim-controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.35rem .8rem;border-radius:6px;font-size:.8rem;transition:all .15s}
 .anim-controls button:hover{background:var(--bg3)}
 .page-nav{display:flex;justify-content:space-between;padding:1.5rem;border-top:1px solid rgba(255,255,255,.06);margin-top:2rem}
@@ -71,267 +88,326 @@ footer a{color:#60a5fa}
 </style>
 </head>
 <body>
-
 <nav class="top-nav" role="navigation" aria-label="Page navigation">
   <a href="../index.html#init" aria-label="Back to overview">← Overview</a>
-  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>init (Ramdisk)</strong></span>
-  <div class="nav-right">
-    <button onclick="toggleHC()" aria-label="Toggle high contrast">◑ Contrast</button>
-  </div>
+  <span class="breadcrumb">AOSP Boot <span>›</span> <strong>First-Stage init (Ramdisk)</strong></span>
+  <div class="nav-right"><button onclick="toggleHC()" aria-label="Toggle high contrast" title="High contrast (H)">◑ Contrast</button></div>
 </nav>
-
 <header class="page-header" role="banner">
   <div class="color-bar"></div>
-  <h1>📜 init — First Stage (Ramdisk)</h1>
-  <p class="summary">The first userspace process (PID 1) — parses init.rc, reads fstab, and triggers AVB verification and early mounts.</p>
+  <h1>📜 First-Stage init (Ramdisk)</h1>
+  <p class="summary">The very first userspace process (PID 1), running from the ramdisk before real partitions exist — responsible for creating the device environment, mounting critical filesystems, and handing off to second-stage init.</p>
 </header>
-
 <main class="content" role="main">
-
-  <section class="section">
+  <section class="section" aria-label="Overview">
     <h2><span class="s-icon">📋</span> Overview</h2>
     <ul class="overview-list">
-      <li><strong>Identity:</strong> <code>/init</code> runs as PID 1, the ancestor of all userspace processes. It never exits.</li>
-      <li><strong>Two stages:</strong> First-stage init runs from ramdisk (before real root); second-stage init runs after filesystems are mounted.</li>
-      <li><strong>Key action:</strong> Reads <code>fstab.&lt;hw&gt;</code> to discover partitions, triggers AVB, and performs early mounts of <code>/system</code>, <code>/vendor</code>, etc.</li>
+      <li><strong>Identity:</strong> <code>/init</code> is executed by the kernel as PID 1 — the ancestor of every userspace process. It is a <strong>statically linked binary</strong> running from the ramdisk <code>tmpfs</code>, because no real filesystem is mounted yet. (<a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_init.cpp" target="_blank" rel="noopener" style="color:#60a5fa;font-size:.8rem">source: first_stage_init.cpp</a>)</li>
+      <li><strong>Scope:</strong> First-stage init handles <em>only</em> the minimum work needed to make real partitions available: virtual FS mounts, device nodes, fstab parsing, dm-verity/dm-linear setup, and early partition mounts. It does <strong>not</strong> parse <code>init.rc</code>, start services, or manage properties — those are <a href="services.html" style="color:#60a5fa">second-stage responsibilities</a>.</li>
+      <li><strong>Exit:</strong> First-stage init ends by calling <code>execv("/system/bin/init")</code> (or re-executing <code>/init</code> with a second-stage flag) to replace itself with second-stage init, preserving PID 1.</li>
     </ul>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">⚙️</span> How It Works</h2>
+  <section class="section" aria-label="Analogy">
+    <h2><span class="s-icon">🎭</span> Think of It This Way</h2>
+    <div class="mentor">
+      Imagine a <strong>theater stage crew</strong> working before the curtain rises. They arrive in a dark, empty theater (the ramdisk). Their job is to: <strong>turn on the lights</strong> (mount <code>/dev</code>, <code>/proc</code>, <code>/sys</code>), <strong>plug in the microphones</strong> (start <code>ueventd</code> to create device nodes), <strong>read the seating chart</strong> (parse <code>fstab</code>), <strong>check safety equipment</strong> (set up AVB / dm-verity), <strong>position the props</strong> (mount <code>/system</code>, <code>/vendor</code>), and finally <strong>hand the stage to the director</strong> (call <code>execv()</code> to launch second-stage init), who cues the actors (services) and opens the show.<br><br>
+      The crew <em>never reads the script</em> (<code>init.rc</code>) — that is the director's job. The crew only prepares the stage.
+    </div>
+  </section>
+  <section class="section" aria-label="How it works">
+    <h2><span class="s-icon">⚙️</span> How It Works — Seven First-Stage Responsibilities</h2>
     <div class="anim-controls">
-      <button onclick="animPlay()">▶ Play</button>
-      <button onclick="animReset()">↺ Reset</button>
+      <button onclick="animPlay()" aria-label="Play steps">▶ Play</button>
+      <button onclick="animReset()" aria-label="Reset steps">↺ Reset</button>
     </div>
     <div class="step-flow" id="stepFlow">
       <div class="step-item" data-num="1">
         <div class="step-connector"></div>
-        <h3>Kernel Executes /init</h3>
-        <p>Kernel calls <code>run_init_process("/init")</code>. This is the first-stage init binary, linked statically, running from the ramdisk tmpfs.</p>
+        <h3>① Mount Virtual Filesystems (<code>/dev</code>, <code>/proc</code>, <code>/sys</code>)</h3>
+        <p>The kernel starts <code>/init</code> in a bare ramdisk with almost nothing mounted. First-stage init immediately mounts the essential virtual filesystems:</p>
+        <p>• <code>mount("tmpfs", "/dev", "tmpfs")</code> — writable <code>/dev</code> for device nodes.<br>• <code>mount("proc", "/proc", "proc")</code> — kernel state (process info, cmdline).<br>• <code>mount("sysfs", "/sys", "sysfs")</code> — kernel device model and driver info.<br>Also mounts <code>/dev/pts</code> (pseudo-terminals) and <code>/sys/fs/selinux</code>.</p>
+        <span class="cite">📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_init.cpp" target="_blank" rel="noopener">first_stage_init.cpp — FirstStageInit()</a></span>
       </div>
       <div class="step-item" data-num="2">
         <div class="step-connector"></div>
-        <h3>Parse fstab.&lt;hw&gt;</h3>
-        <p>First-stage init reads <code>/fstab.qcom</code> (or <code>/vendor/etc/fstab.&lt;hw&gt;</code>) to discover the partition layout, mount flags, and filesystem types. This file maps device paths to mount points.</p>
+        <h3>② Start <code>ueventd</code> to Populate <code>/dev</code></h3>
+        <p>After mounting <code>/dev</code>, it is empty — no block device nodes exist yet. First-stage init forks <code>ueventd</code>, which listens for kernel <code>uevent</code> messages and creates device nodes under <code>/dev/block/</code>. This is critical because partition mounts need paths like <code>/dev/block/by-name/system</code>.</p>
+        <p><code>ueventd</code> reads <code>ueventd.rc</code> from the ramdisk for ownership/permissions and creates platform-specific symlinks (e.g., <code>/dev/block/bootdevice/by-name/</code> on Qualcomm).</p>
+        <div class="why">Without ueventd, fstab entries referencing <code>/dev/block/by-name/&lt;partition&gt;</code> resolve to nothing, and all mount operations fail with "no such device."</div>
+        <span class="cite">📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/ueventd.cpp" target="_blank" rel="noopener">ueventd.cpp</a> · <a href="https://source.android.com/docs/core/architecture/configuration/init#ueventd" target="_blank" rel="noopener">AOSP — ueventd</a></span>
       </div>
       <div class="step-item" data-num="3">
         <div class="step-connector"></div>
-        <h3>Trigger AVB Verification</h3>
-        <p>Calls <code>fs_mgr</code> to set up AVB handles. Verifies vbmeta chain for partitions listed in fstab with <code>avb</code> flag. Sets up dm-verity and dm-linear targets.</p>
+        <h3>③ Read and Apply <code>fstab</code> Entries</h3>
+        <p>First-stage init reads the device fstab to discover partitions, mount points, and filesystem-manager flags. Location varies by device:</p>
+        <p>• Ramdisk: <code>/fstab.&lt;hw&gt;</code> (legacy) or <code>/first_stage_ramdisk/fstab.&lt;hw&gt;</code><br>• Vendor ramdisk: <code>/vendor/etc/fstab.&lt;hw&gt;</code> (modern GKI devices)<br>• Device-tree: <code>/proc/device-tree/firmware/android/fstab</code> (deprecated)</p>
+        <p>Only entries with the <code>first_stage_mount</code> flag are processed. Other entries are deferred to second-stage init or <code>vold</code>.</p>
+        <div class="why">The <code>&lt;hw&gt;</code> in <code>fstab.&lt;hw&gt;</code> is <strong>vendor-specific</strong>. Qualcomm → <code>fstab.qcom</code>; Tensor → <code>fstab.tensor</code>; Exynos → <code>fstab.exynos</code>. Determined by <code>androidboot.hardware</code> in the kernel command line. Run <code>cat /proc/cmdline</code> to check.</div>
+        <span class="cite">📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_mount.cpp" target="_blank" rel="noopener">first_stage_mount.cpp — ReadFstab()</a> · <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images#fstab" target="_blank" rel="noopener">AOSP — fstab</a></span>
       </div>
       <div class="step-item" data-num="4">
         <div class="step-connector"></div>
-        <h3>Early Mounts</h3>
-        <p>Mounts <code>/system</code>, <code>/vendor</code>, <code>/odm</code>, <code>/product</code> as read-only. These are needed before second-stage init can load SELinux policy and additional configs.</p>
+        <h3>④ Handle A/B Slot Switching Logic</h3>
+        <p>On A/B devices, partitions are duplicated (<code>system_a</code> / <code>system_b</code>). First-stage init resolves the active slot:</p>
+        <p>• Reads slot suffix from kernel cmdline (<code>androidboot.slot_suffix=_a</code>) or bootconfig.<br>• For fstab entries with <code>slotselect</code>, appends the suffix (e.g., <code>system</code> → <code>system_a</code>).<br>• All subsequent dm-verity and mount operations use the slot-resolved partition names.</p>
+        <p>The bootloader already <em>selected</em> the slot — first-stage init merely <em>reads</em> that decision and applies it to mount paths.</p>
+        <div class="why">A/B slot awareness is essential because dm-verity hash trees and vbmeta descriptors are slot-specific. Mounting <code>system_b</code>'s image with <code>system_a</code>'s vbmeta would fail AVB verification.</div>
+        <span class="cite">📄 <a href="https://source.android.com/docs/core/ota/ab#slots" target="_blank" rel="noopener">AOSP — A/B Slots</a> · <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/fs_mgr/fs_mgr_fstab.cpp" target="_blank" rel="noopener">fs_mgr_fstab.cpp</a></span>
       </div>
       <div class="step-item" data-num="5">
         <div class="step-connector"></div>
-        <h3>Load SELinux Policy</h3>
-        <p>Loads the compiled sepolicy from the mounted partitions. Transitions init to the <code>u:r:init:s0</code> SELinux context.</p>
+        <h3>⑤ Create Device-Mapper Targets (<code>dm-linear</code>, <code>dm-verity</code>)</h3>
+        <p>Before mounting, first-stage init uses the kernel device-mapper framework to set up two critical layers:</p>
+        <p><strong>dm-linear:</strong> On devices with dynamic partitions, logical partitions are carved from the physical <code>super</code> partition. <code>fs_mgr</code> reads the partition table from <code>super</code> and creates dm-linear targets mapping each logical partition to its byte range.<br><br><strong>dm-verity:</strong> For partitions with the <code>avb</code> fstab flag, <code>fs_mgr</code> reads hash-tree descriptors from <code>vbmeta</code> and configures dm-verity. This creates a verified device-mapper node that checks each 4 KiB block against the Merkle tree on read.</p>
+        <p>The resulting nodes (e.g., <code>/dev/block/dm-0</code>) are what get mounted — not the raw partition devices.</p>
+        <div class="why">The dm-verity setup here is what makes Android Verified Boot work at runtime. Without it, a tampered <code>/system</code> would go undetected. The hash tree root signed in vbmeta anchors the chain of trust.</div>
+        <span class="cite">📄 <a href="https://source.android.com/docs/security/features/verifiedboot/dm-verity" target="_blank" rel="noopener">AOSP — dm-verity</a> · <a href="https://source.android.com/docs/core/ota/dynamic_partitions" target="_blank" rel="noopener">AOSP — Dynamic Partitions</a> · <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_mount.cpp" target="_blank" rel="noopener">first_stage_mount.cpp</a></span>
       </div>
       <div class="step-item" data-num="6">
-        <h3>Re-execute as Second-Stage init</h3>
-        <p>Calls <code>execv("/init")</code> with a flag indicating second stage. Second-stage init parses the full <code>init.rc</code> tree and begins starting services.</p>
+        <div class="step-connector"></div>
+        <h3>⑥ Mount Vendor and Platform Partitions</h3>
+        <p>With dm targets ready, first-stage init mounts partitions flagged <code>first_stage_mount</code>:</p>
+        <p>• <code>/system</code> — Android framework and core binaries (often mounted at <code>/</code> via system-as-root)<br>• <code>/vendor</code> — HAL libraries, vendor init scripts, firmware<br>• <code>/odm</code> — ODM customizations<br>• <code>/product</code>, <code>/system_ext</code> — optional, vary by device</p>
+        <p>All mounts are <strong>read-only</strong>. These must be available before second-stage init because it needs SELinux policy (from <code>/vendor/etc/selinux/</code>) and the <code>init.rc</code> tree (from <code>/system/etc/init/</code>).</p>
+        <span class="cite">📄 <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images" target="_blank" rel="noopener">AOSP — Partitions and Images</a> · <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_mount.cpp" target="_blank" rel="noopener">first_stage_mount.cpp — DoFirstStageMount()</a></span>
+      </div>
+      <div class="step-item" data-num="7">
+        <h3>⑦ <code>execv()</code> Handoff to Second-Stage init</h3>
+        <p>Once early mounts are complete, first-stage init performs the handoff:</p>
+        <p>1. Loads compiled SELinux policy from newly-mounted partitions; transitions to enforcing mode.<br>2. Re-labels <code>/dev</code>, <code>/proc</code>, <code>/sys</code> with correct SELinux contexts.<br>3. Calls <code>execv("/system/bin/init", {"second_stage", ...})</code>.</p>
+        <p>The <code>execv()</code> call <strong>replaces</strong> the current process image — the same PID 1 now runs the second-stage init binary. This is not a fork; first-stage init ceases to exist. Second-stage init then parses the full <code>init.rc</code> tree, starts the property service, fires triggers, and begins launching services. See <a href="services.html" style="color:#60a5fa">Second-Stage init — Service Startup</a> for that flow.</p>
+        <div class="why">Using <code>execv()</code> instead of <code>fork()</code> preserves PID 1 — Android requires init to be PID 1 for its entire lifetime. It also cleanly separates the minimal ramdisk environment from the fully-mounted one. This is the "curtain rise" moment.</div>
+        <span class="cite">📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_init.cpp" target="_blank" rel="noopener">first_stage_init.cpp</a> · <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/selinux.cpp" target="_blank" rel="noopener">selinux.cpp — SetupSelinux()</a></span>
       </div>
     </div>
   </section>
-
-  <!-- Interactive SVG: init.rc parsing tree -->
-  <section class="section">
-    <h2><span class="s-icon">🌲</span> init.rc Parsing &amp; Trigger Sequence</h2>
+  <!-- Animated flow diagram -->
+  <section class="section" aria-label="First-stage boot flow diagram">
+    <h2><span class="s-icon">🔗</span> First-Stage Boot Flow — Kernel to execv()</h2>
+    <p style="font-size:.84rem;color:var(--text-dim);margin-bottom:.4rem">Each block represents a major action; arrows show control flow. Colors match the main overview diagram.</p>
     <div class="svg-canvas">
-      <svg viewBox="0 0 800 340" width="800" height="340" role="img" aria-label="init.rc trigger sequence diagram">
-        <!-- init.rc root -->
-        <rect x="300" y="10" width="200" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"/>
-        <text x="400" y="32" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">init.rc</text>
-        <text x="400" y="48" text-anchor="middle" font-size="9" fill="#ffe0b2">Main configuration file</text>
-
-        <!-- Import lines -->
-        <line x1="340" y1="60" x2="150" y2="100" stroke="#ffa726" stroke-width="1.5"/>
-        <line x1="400" y1="60" x2="400" y2="100" stroke="#ffa726" stroke-width="1.5"/>
-        <line x1="460" y1="60" x2="650" y2="100" stroke="#ffa726" stroke-width="1.5"/>
-
-        <!-- Imported files -->
-        <rect x="50" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
-        <text x="150" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.&lt;hw&gt;.rc</text>
-
-        <rect x="300" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
-        <text x="400" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.usb.rc</text>
-
-        <rect x="550" y="100" width="200" height="40" rx="6" fill="rgba(239,108,0,.3)" stroke="#ffa726" stroke-width="1"/>
-        <text x="650" y="124" text-anchor="middle" font-size="10" fill="#ffa726">init.zygote64.rc</text>
-
-        <!-- Trigger sequence -->
-        <text x="400" y="175" text-anchor="middle" font-size="12" font-weight="700" fill="#ffa726">Trigger Execution Order</text>
-
-        <!-- Triggers -->
-        <rect x="40" y="195" width="130" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
-          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0s" repeatCount="indefinite"/>
-        </rect>
-        <text x="105" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">early-init</text>
-
-        <line x1="170" y1="215" x2="210" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
-
-        <rect x="210" y="195" width="100" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
-          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="0.5s" repeatCount="indefinite"/>
-        </rect>
-        <text x="260" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">init</text>
-
-        <line x1="310" y1="215" x2="350" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
-
-        <rect x="350" y="195" width="110" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
-          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1s" repeatCount="indefinite"/>
-        </rect>
-        <text x="405" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">late-init</text>
-
-        <line x1="460" y1="215" x2="500" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
-
-        <rect x="500" y="195" width="110" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
-          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="1.5s" repeatCount="indefinite"/>
-        </rect>
-        <text x="555" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">post-fs</text>
-
-        <line x1="610" y1="215" x2="650" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrO)"/>
-
-        <rect x="650" y="195" width="100" height="40" rx="6" fill="rgba(239,108,0,.2)" stroke="#ef6c00" stroke-width="1.5">
-          <animate attributeName="stroke-opacity" values="0.3;1;0.3" dur="3s" begin="2s" repeatCount="indefinite"/>
-        </rect>
-        <text x="700" y="219" text-anchor="middle" font-size="11" font-weight="600" fill="#ffa726">boot</text>
-
-        <!-- fstab box -->
-        <rect x="50" y="270" width="300" height="55" rx="8" fill="rgba(21,101,192,.15)" stroke="#42a5f5" stroke-width="1.5" stroke-dasharray="4"/>
-        <text x="200" y="290" text-anchor="middle" font-size="11" font-weight="600" fill="#42a5f5">📄 fstab.qcom (vendor-specific)</text>
-        <text x="200" y="306" text-anchor="middle" font-size="9" fill="#90caf9">/dev/block/by-name/system  /system  ext4  ro,verify</text>
-        <text x="200" y="318" text-anchor="middle" font-size="9" fill="#90caf9">/dev/block/by-name/vendor  /vendor  ext4  ro,verify</text>
-
-        <defs>
-          <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
-          </marker>
-        </defs>
+      <svg viewBox="0 0 840 340" width="840" height="340" role="img" aria-label="First-stage init boot flow from kernel handoff to execv of second-stage init">
+        <rect x="30" y="10" width="160" height="50" rx="8" fill="#c62828" stroke="#e53935" stroke-width="2"/>
+        <text x="110" y="32" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">⚙️ Kernel</text>
+        <text x="110" y="48" text-anchor="middle" font-size="8" fill="#ef9a9a">run_init_process("/init")</text>
+        <line x1="190" y1="35" x2="240" y2="35" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="240" y="10" width="155" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="0s" repeatCount="indefinite"/></rect>
+        <text x="317" y="30" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">① Mount VFS</text>
+        <text x="317" y="46" text-anchor="middle" font-size="8" fill="#ffe0b2">/dev, /proc, /sys</text>
+        <line x1="395" y1="35" x2="440" y2="35" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="440" y="10" width="140" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin=".5s" repeatCount="indefinite"/></rect>
+        <text x="510" y="30" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">② ueventd</text>
+        <text x="510" y="46" text-anchor="middle" font-size="8" fill="#ffe0b2">/dev/block/* nodes</text>
+        <line x1="580" y1="35" x2="630" y2="35" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="630" y="10" width="170" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="1s" repeatCount="indefinite"/></rect>
+        <text x="715" y="30" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">③ Parse fstab</text>
+        <text x="715" y="46" text-anchor="middle" font-size="8" fill="#ffe0b2">first_stage_mount entries</text>
+        <line x1="715" y1="60" x2="715" y2="95" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="610" y="95" width="200" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="1.5s" repeatCount="indefinite"/></rect>
+        <text x="710" y="115" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">④ Resolve A/B Slot</text>
+        <text x="710" y="131" text-anchor="middle" font-size="8" fill="#ffe0b2">slot_suffix → _a or _b</text>
+        <line x1="610" y1="120" x2="540" y2="120" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="310" y="95" width="230" height="50" rx="8" fill="#e65100" stroke="#fb8c00" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="2s" repeatCount="indefinite"/></rect>
+        <text x="425" y="115" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">⑤ dm-linear / dm-verity</text>
+        <text x="425" y="131" text-anchor="middle" font-size="8" fill="#ffe0b2">Device-mapper targets</text>
+        <line x1="310" y1="120" x2="260" y2="120" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="40" y="95" width="220" height="50" rx="8" fill="#1565c0" stroke="#1e88e5" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="2.5s" repeatCount="indefinite"/></rect>
+        <text x="150" y="115" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">⑥ Mount /system /vendor /odm</text>
+        <text x="150" y="131" text-anchor="middle" font-size="8" fill="#bbdefb">Read-only early mounts</text>
+        <line x1="150" y1="145" x2="150" y2="180" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="40" y="180" width="220" height="50" rx="8" fill="#6a1b9a" stroke="#8e24aa" stroke-width="2"><animate attributeName="stroke-opacity" values="1;.4;1" dur="4s" begin="3s" repeatCount="indefinite"/></rect>
+        <text x="150" y="200" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">Load SELinux Policy</text>
+        <text x="150" y="220" text-anchor="middle" font-size="8" fill="#ce93d8">Enforce mode · relabel</text>
+        <line x1="260" y1="205" x2="340" y2="205" stroke="#94a3b8" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="340" y="180" width="240" height="50" rx="8" fill="#00695c" stroke="#00897b" stroke-width="3"><animate attributeName="stroke-opacity" values="1;.4;1" dur="2s" repeatCount="indefinite"/></rect>
+        <text x="460" y="200" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">⑦ execv() → second-stage</text>
+        <text x="460" y="218" text-anchor="middle" font-size="8" fill="#80cbc4">PID 1 becomes second-stage init</text>
+        <rect x="40" y="255" width="380" height="70" rx="8" fill="rgba(33,150,243,.08)" stroke="#42a5f5" stroke-width="1" stroke-dasharray="4"/>
+        <text x="230" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#42a5f5">📝 Textual Summary (no animation needed)</text>
+        <text x="230" y="291" text-anchor="middle" font-size="8.5" fill="#90caf9">Kernel → mount /dev,/proc,/sys → ueventd → parse fstab</text>
+        <text x="230" y="305" text-anchor="middle" font-size="8.5" fill="#90caf9">→ resolve A/B slot → dm-linear + dm-verity → mount partitions</text>
+        <text x="230" y="319" text-anchor="middle" font-size="8.5" fill="#90caf9">→ load SELinux → execv() second-stage init</text>
+        <rect x="460" y="255" width="340" height="60" rx="8" fill="rgba(239,108,0,.08)" stroke="#ffa726" stroke-width="1" stroke-dasharray="4"/>
+        <text x="630" y="275" text-anchor="middle" font-size="10" font-weight="600" fill="#ffa726">⚠️ First stage does NOT:</text>
+        <text x="630" y="291" text-anchor="middle" font-size="8.5" fill="#ffcc80">• Parse init.rc or fire triggers</text>
+        <text x="630" y="305" text-anchor="middle" font-size="8.5" fill="#ffcc80">• Start services or manage properties</text>
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker></defs>
       </svg>
     </div>
+    <p class="svg-caption">Figure 1: First-stage boot flow from kernel handoff to execv(). Colors: orange=init, blue=mounting, purple=SELinux, teal=handoff.</p>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
-    <table class="files-table">
-      <thead><tr><th>File</th><th>Location</th><th>Purpose</th></tr></thead>
-      <tbody>
-        <tr><td><code>/init</code></td><td>Ramdisk root</td><td>First-stage init binary (statically linked)</td></tr>
-        <tr><td><code>init.rc</code></td><td><code>/system/etc/init/</code></td><td>Main service/trigger configuration</td></tr>
-        <tr><td><code>init.&lt;hw&gt;.rc</code></td><td>Ramdisk or vendor</td><td>Hardware-specific init configuration</td></tr>
-        <tr><td><code>fstab.qcom</code></td><td>Ramdisk or <code>/vendor/etc/</code></td><td>Filesystem table — partition-to-mount mapping (⚠️ vendor-specific name)</td></tr>
-        <tr><td><code>init.zygote64.rc</code></td><td><code>/system/etc/init/</code></td><td>Zygote service definition for 64-bit</td></tr>
-        <tr><td><code>ueventd.rc</code></td><td>Ramdisk</td><td>Device node permissions and ownership rules</td></tr>
-      </tbody>
-    </table>
+  <!-- Relationship diagram -->
+  <section class="section" aria-label="Component relationship diagram">
+    <h2><span class="s-icon">🗺️</span> Component Relationships</h2>
+    <p style="font-size:.84rem;color:var(--text-dim);margin-bottom:.4rem">How kernel, ramdisk, ueventd, fstab, device-mapper, and mounted partitions relate.</p>
+    <div class="svg-canvas">
+      <svg viewBox="0 0 800 370" width="800" height="370" role="img" aria-label="Component relationships during first-stage init">
+        <rect x="20" y="20" width="140" height="50" rx="8" fill="#c62828" stroke="#e53935" stroke-width="2"/>
+        <text x="90" y="42" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">⚙️ Kernel</text>
+        <text x="90" y="56" text-anchor="middle" font-size="8" fill="#ef9a9a">PID 1 creator</text>
+        <rect x="220" y="10" width="260" height="70" rx="8" fill="rgba(239,108,0,.12)" stroke="#ef6c00" stroke-width="2"/>
+        <text x="350" y="30" text-anchor="middle" font-size="11" font-weight="700" fill="#ffa726">📦 Ramdisk (tmpfs)</text>
+        <text x="350" y="48" text-anchor="middle" font-size="9" fill="#ffe0b2">/init · ueventd.rc · fstab.&lt;hw&gt;</text>
+        <text x="350" y="62" text-anchor="middle" font-size="8" fill="#ffe0b2">first_stage_ramdisk/ · /lib/modules/</text>
+        <line x1="160" y1="45" x2="220" y2="45" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <text x="190" y="38" text-anchor="middle" font-size="8" fill="#94a3b8">exec</text>
+        <rect x="540" y="20" width="130" height="50" rx="8" fill="#ef6c00" stroke="#ffa726" stroke-width="1.5"/>
+        <text x="605" y="42" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">🔌 ueventd</text>
+        <text x="605" y="56" text-anchor="middle" font-size="8" fill="#ffe0b2">Device node creator</text>
+        <line x1="480" y1="40" x2="540" y2="40" stroke="#ffa726" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <text x="510" y="33" text-anchor="middle" font-size="7" fill="#ffa726">fork</text>
+        <rect x="710" y="20" width="80" height="50" rx="6" fill="rgba(255,167,38,.15)" stroke="#ffa726" stroke-width="1" stroke-dasharray="3"/>
+        <text x="750" y="42" text-anchor="middle" font-size="9" fill="#ffa726">/dev/block/</text>
+        <text x="750" y="55" text-anchor="middle" font-size="7.5" fill="#ffcc80">by-name/*</text>
+        <line x1="670" y1="45" x2="710" y2="45" stroke="#ffa726" stroke-width="1" marker-end="url(#arr2)"/>
+        <rect x="130" y="120" width="200" height="55" rx="8" fill="rgba(33,150,243,.12)" stroke="#42a5f5" stroke-width="1.5"/>
+        <text x="230" y="142" text-anchor="middle" font-size="10" font-weight="700" fill="#42a5f5">📄 fstab.&lt;hw&gt;</text>
+        <text x="230" y="158" text-anchor="middle" font-size="8" fill="#90caf9">partition table · mount flags</text>
+        <text x="230" y="168" text-anchor="middle" font-size="7.5" fill="#90caf9">first_stage_mount · slotselect · avb</text>
+        <line x1="300" y1="80" x2="260" y2="120" stroke="#42a5f5" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <text x="290" y="95" text-anchor="middle" font-size="7" fill="#42a5f5">reads</text>
+        <rect x="400" y="120" width="180" height="55" rx="8" fill="rgba(102,187,106,.1)" stroke="#66bb6a" stroke-width="1.5" stroke-dasharray="3"/>
+        <text x="490" y="142" text-anchor="middle" font-size="10" font-weight="600" fill="#66bb6a">🔀 Slot Suffix</text>
+        <text x="490" y="158" text-anchor="middle" font-size="8" fill="#a5d6a7">androidboot.slot_suffix</text>
+        <text x="490" y="168" text-anchor="middle" font-size="8" fill="#a5d6a7">from /proc/cmdline</text>
+        <line x1="230" y1="175" x2="230" y2="215" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <line x1="490" y1="175" x2="390" y2="215" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3" marker-end="url(#arr2)"/>
+        <rect x="120" y="215" width="300" height="50" rx="8" fill="rgba(230,81,0,.12)" stroke="#fb8c00" stroke-width="2"/>
+        <text x="270" y="235" text-anchor="middle" font-size="10" font-weight="700" fill="#fb8c00">🔧 dm-linear + dm-verity</text>
+        <text x="270" y="252" text-anchor="middle" font-size="8.5" fill="#ffcc80">Logical partitions + verified reads</text>
+        <rect x="490" y="220" width="140" height="40" rx="6" fill="rgba(230,81,0,.08)" stroke="#fb8c00" stroke-width="1" stroke-dasharray="3"/>
+        <text x="560" y="237" text-anchor="middle" font-size="9" fill="#fb8c00">🛡️ vbmeta</text>
+        <text x="560" y="252" text-anchor="middle" font-size="7.5" fill="#ffcc80">Hash descriptors</text>
+        <line x1="490" y1="240" x2="420" y2="240" stroke="#fb8c00" stroke-width="1" marker-end="url(#arr2)"/>
+        <rect x="50" y="300" width="110" height="40" rx="6" fill="#1565c0" stroke="#1e88e5" stroke-width="1.5"/>
+        <text x="105" y="322" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">/system</text>
+        <rect x="175" y="300" width="110" height="40" rx="6" fill="#1565c0" stroke="#1e88e5" stroke-width="1.5"/>
+        <text x="230" y="322" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">/vendor</text>
+        <rect x="300" y="300" width="90" height="40" rx="6" fill="#1565c0" stroke="#1e88e5" stroke-width="1.5"/>
+        <text x="345" y="322" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">/odm</text>
+        <line x1="190" y1="265" x2="105" y2="300" stroke="#1e88e5" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <line x1="270" y1="265" x2="230" y2="300" stroke="#1e88e5" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <line x1="330" y1="265" x2="345" y2="300" stroke="#1e88e5" stroke-width="1.5" marker-end="url(#arr2)"/>
+        <rect x="500" y="300" width="260" height="50" rx="8" fill="#00695c" stroke="#00897b" stroke-width="2"/>
+        <text x="630" y="322" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">🚀 Second-Stage init</text>
+        <text x="630" y="338" text-anchor="middle" font-size="8" fill="#80cbc4">Parses init.rc · starts services</text>
+        <line x1="390" y1="322" x2="500" y2="322" stroke="#00897b" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="445" y="315" text-anchor="middle" font-size="7.5" fill="#00897b">execv()</text>
+        <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/></marker></defs>
+      </svg>
+    </div>
+    <p class="svg-caption">Figure 2: Ramdisk provides init, fstab, ueventd rules. ueventd creates device nodes for fstab. Slot suffix + fstab drive dm-target creation, producing verified devices that are mounted.</p>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">⚠️</span> Common Checks &amp; Failure Modes</h2>
+  <section class="section" aria-label="Key files"><h2><span class="s-icon">📁</span> Key Files &amp; Artifacts</h2>
+    <table class="files-table"><thead><tr><th>File</th><th>Location</th><th>Purpose</th></tr></thead><tbody>
+      <tr><td><span class="file-icon">📜</span> <code>/init</code></td><td>Ramdisk root</td><td>First-stage init binary (statically linked, runs from tmpfs)</td></tr>
+      <tr><td><span class="file-icon">📄</span> <code>fstab.&lt;hw&gt;</code></td><td>Ramdisk or <code>/vendor/etc/</code></td><td>Partition-to-mount mapping (⚠️ vendor-specific name)</td></tr>
+      <tr><td><span class="file-icon">🔌</span> <code>ueventd</code></td><td>Ramdisk (symlink to <code>/init</code>)</td><td>Creates <code>/dev/block/*</code> from kernel uevents</td></tr>
+      <tr><td><span class="file-icon">📝</span> <code>ueventd.rc</code></td><td>Ramdisk</td><td>Device-node permissions and ownership rules</td></tr>
+      <tr><td><span class="file-icon">📝</span> <code>/proc/cmdline</code></td><td>Kernel pseudo-fs</td><td>Contains <code>androidboot.slot_suffix</code>, <code>androidboot.hardware</code></td></tr>
+      <tr><td><span class="file-icon">🛡️</span> <code>vbmeta.img</code></td><td><code>vbmeta</code> partition</td><td>Signed hash descriptors for dm-verity</td></tr>
+      <tr><td><span class="file-icon">💾</span> <code>super</code></td><td>Physical partition</td><td>Contains dynamic/logical partitions</td></tr>
+      <tr><td><span class="file-icon">🔧</span> <code>first_stage_init.cpp</code></td><td>AOSP <code>system/core/init/</code></td><td>First-stage init entry point</td></tr>
+      <tr><td><span class="file-icon">🔧</span> <code>first_stage_mount.cpp</code></td><td>AOSP <code>system/core/init/</code></td><td>fstab parsing, dm targets, early mount</td></tr>
+    </tbody></table>
+  </section>
+  <section class="section" aria-label="How to verify"><h2><span class="s-icon">✅</span> How to Verify — Developer Checklist</h2>
+    <p style="font-size:.84rem;color:var(--text-dim);margin-bottom:.6rem">Use these commands on a running device to confirm first-stage init completed successfully:</p>
+    <ul class="checklist">
+      <li><code>adb shell ls /dev/block/by-name/</code><span class="desc">Confirm device nodes exist. Empty → ueventd failed or storage drivers missing.</span></li>
+      <li><code>adb shell cat /proc/cmdline | tr ' ' '\n' | grep androidboot</code><span class="desc">Check <code>androidboot.slot_suffix</code>, <code>.hardware</code>, <code>.verifiedbootstate</code>.</span></li>
+      <li><code>adb shell cat /proc/mounts | grep -E "system|vendor|odm"</code><span class="desc">Verify critical partitions are mounted. Check for <code>dm-</code> device paths (dm-verity active).</span></li>
+      <li><code>adb shell ls /dev/block/dm-*</code><span class="desc">Confirm device-mapper targets were created.</span></li>
+      <li><code>adb shell ps -p 1 -o comm=</code><span class="desc">Should return <code>init</code>. PID 1 survived the execv handoff.</span></li>
+      <li><code>adb shell getenforce</code><span class="desc">Should return <code>Enforcing</code>. SELinux loaded before execv.</span></li>
+      <li><code>adb shell dmesg | grep -i "first stage"</code><span class="desc">First-stage log messages. Useful for diagnosing mount/fstab errors.</span></li>
+    </ul>
+  </section>
+  <section class="section" aria-label="Common pitfalls"><h2><span class="s-icon">⚠️</span> Common Pitfalls &amp; Failure Modes</h2>
     <div class="fail-cards">
-      <div class="fail-card">
-        <h4>🚫 fstab Not Found</h4>
-        <p>If <code>fstab.&lt;hw&gt;</code> is missing or malformed, init cannot discover partitions. Boot stalls before mounting <code>/system</code>.</p>
-      </div>
-      <div class="fail-card">
-        <h4>🚫 init.rc Syntax Error</h4>
-        <p>A syntax error in any imported <code>*.rc</code> file causes the entire section to be skipped. Check <code>dmesg</code> for "init: /init.rc: ..." error messages.</p>
-      </div>
-      <div class="fail-card warn">
-        <h4>⚡ SELinux Denial on Mount</h4>
-        <p>If SELinux contexts don't match, mount operations may be denied even if the partition exists. Check <code>adb logcat | grep avc</code>.</p>
-      </div>
-      <div class="fail-card warn">
-        <h4>⚡ Missing Device Node</h4>
-        <p>If a block device referenced in fstab doesn't appear (driver not loaded), mount fails. First-stage init waits with a timeout.</p>
-      </div>
+      <div class="fail-card"><h4>🚫 fstab Not Found or Malformed</h4><p>Missing or syntax-broken <code>fstab.&lt;hw&gt;</code> → init cannot discover partitions. Boot stalls before <code>/system</code> mount. Verify <code>androidboot.hardware</code> matches the fstab filename.</p></div>
+      <div class="fail-card"><h4>🚫 dm-verity Setup Failure</h4><p>vbmeta hash mismatch after flashing a modified system image → dm-verity creation fails. Locked device: boot aborts. Unlocked: warning. Fix by re-flashing vbmeta or <code>fastboot --disable-verity</code>.</p></div>
+      <div class="fail-card warn"><h4>⚡ Missing Device Node (ueventd timeout)</h4><p>Block device not in <code>/dev/block/</code> (storage driver issue, wrong DTB) → init waits and then panics. Check <code>dmesg</code> for storage driver errors.</p></div>
+      <div class="fail-card warn"><h4>⚡ Wrong Partition Flashed to Wrong Slot</h4><p><code>system_a</code> image in slot B → slot suffix resolution mounts wrong data. dm-verity catches the hash mismatch. Always verify <code>fastboot getvar current-slot</code> before flashing.</p></div>
+      <div class="fail-card"><h4>🚫 SELinux Policy Load Failure</h4><p>If <code>/vendor/etc/selinux/</code> is missing (mount failed), policy cannot load and execv to second-stage fails. Root cause is usually step ⑥.</p></div>
+      <div class="fail-card warn"><h4>⚡ Dynamic Partition Table Corruption</h4><p>Corrupted <code>super</code> metadata → dm-linear fails. Recovery: <code>fastboot wipe super</code> and re-flash.</p></div>
     </div>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
-    <details>
-      <summary>🔧 Qualcomm fstab.qcom</summary>
-      <div class="details-body">
-        <p>Qualcomm devices use <code>fstab.qcom</code>. Partition paths typically reference <code>/dev/block/bootdevice/by-name/</code> symlinks created by the QTI uevent daemon.</p>
-        <p>Qualcomm adds custom fstab flags: <code>latemount</code>, <code>wait</code>, <code>slotselect</code>.</p>
-      </div>
-    </details>
-    <details>
-      <summary>🔧 First-stage vs Second-stage init</summary>
-      <div class="details-body">
-        <p><strong>First-stage:</strong> Runs from ramdisk. Handles AVB, early mounts, SELinux load. Minimal environment — no properties system, no service manager.</p>
-        <p><strong>Second-stage:</strong> Runs after <code>execv("/init")</code> with full filesystem. Starts property service, parses all <code>init.rc</code> imports, begins service management.</p>
-      </div>
-    </details>
+  <section class="section" aria-label="Vendor-specific"><h2><span class="s-icon">🏭</span> Vendor-Specific Details</h2>
+    <details><summary>🔧 Qualcomm — fstab.qcom and bootdevice symlinks</summary><div class="details-body">
+      <p>Qualcomm uses <code>fstab.qcom</code>. Paths reference <code>/dev/block/bootdevice/by-name/</code> symlinks from QTI uevent rules. Common flags: <code>wait</code>, <code>slotselect</code>, <code>logical</code>, <code>first_stage_mount</code>, <code>avb=vbmeta</code>. If <code>/dev/block/bootdevice/</code> is missing, the platform device driver may not have probed.</p>
+    </div></details>
+    <details><summary>🔧 fstab location — ramdisk vs vendor_boot vs DTB</summary><div class="details-body">
+      <p><strong>Android 9–10:</strong> <code>/fstab.&lt;hw&gt;</code> in ramdisk root.</p>
+      <p><strong>Android 11+:</strong> <code>/vendor/etc/fstab.&lt;hw&gt;</code> (vendor_boot ramdisk). Also checks <code>/first_stage_ramdisk/fstab.&lt;hw&gt;</code>.</p>
+      <p><strong>DTB fstab:</strong> <code>/proc/device-tree/firmware/android/fstab/</code> — deprecated but supported.</p>
+      <p><strong>Uncertainty note:</strong> Exact lookup order varies by AOSP version. Consult <code>first_stage_mount.cpp — ReadFstab()</code> for your target.</p>
+    </div></details>
+    <details><summary>🔧 System-as-root vs ramdisk-as-root</summary><div class="details-body">
+      <p><strong>System-as-root (Android 10+):</strong> <code>system</code> partition mounted at <code>/</code>. Ramdisk only has <code>/init</code>, fstab, ueventd.rc.</p>
+      <p><strong>Legacy (Android 9−):</strong> Ramdisk is root; <code>/system</code> is a separate mount point.</p>
+      <p>Android 13+ devices use <code>init_boot.img</code> for the generic ramdisk. See <a href="boot-image.html" style="color:#60a5fa">Boot Image Format</a>.</p>
+    </div></details>
+    <details><summary>❓ Recovery mode handling</summary><div class="details-body">
+      <p>On A/B devices using recovery-as-boot, first-stage init checks for <code>androidboot.force_normal_boot=1</code>. If absent, it launches recovery. <strong>Uncertainty:</strong> Devices with a dedicated recovery partition may differ. Check <code>BOARD_USES_RECOVERY_AS_BOOT</code> in <code>BoardConfig.mk</code>.</p>
+    </div></details>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">💻</span> Code Snippets</h2>
-    <div class="code-block">
-      <span class="lang-tag">init.rc</span>
-      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
-      <pre><code># Example init.rc trigger and service definition
-on early-init
-    mount tmpfs tmpfs /dev mode=0755
-
-on init
-    mkdir /mnt/vendor/persist 0771 root system
-
-on late-init
-    trigger post-fs
-    trigger boot
-
-service zygote /system/bin/app_process64 -Xzygote /system/bin \
-    --zygote --start-system-server
-    class main
-    priority -20
-    user root
-    group root readproc reserved_disk
-    socket zygote stream 660 root system</code></pre>
-    </div>
-    <div class="code-block">
-      <span class="lang-tag">fstab.qcom</span>
-      <button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
-      <pre><code># Qualcomm fstab example (vendor-specific)
-# &lt;dev&gt;                          &lt;mnt_point&gt;  &lt;type&gt; &lt;mnt_flags&gt;             &lt;fs_mgr_flags&gt;
-system  /system  ext4  ro,barrier=1  wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
-vendor  /vendor  ext4  ro,barrier=1  wait,slotselect,avb=vbmeta,logical,first_stage_mount
-product /product ext4  ro,barrier=1  wait,slotselect,avb=vbmeta,logical,first_stage_mount</code></pre>
-    </div>
+  <section class="section" aria-label="Code snippets"><h2><span class="s-icon">💻</span> Code Snippets</h2>
+    <div class="code-block"><span class="lang-tag">fstab.qcom</span><button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Qualcomm fstab example (⚠️ vendor-specific)
+# &lt;dev&gt;      &lt;mnt_point&gt;  &lt;type&gt; &lt;mnt_flags&gt;       &lt;fs_mgr_flags&gt;
+system       /system      ext4   ro,barrier=1      wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+vendor       /vendor      ext4   ro,barrier=1      wait,slotselect,avb=vbmeta,logical,first_stage_mount
+product      /product     ext4   ro,barrier=1      wait,slotselect,avb=vbmeta,logical,first_stage_mount
+odm          /odm         ext4   ro,barrier=1      wait,slotselect,avb=vbmeta,logical,first_stage_mount
+# Key fs_mgr_flags:
+# first_stage_mount — processed during first-stage (not deferred)
+# slotselect       — append A/B slot suffix to device name
+# avb=vbmeta       — verify via vbmeta hash descriptors
+# logical          — dynamic partition from 'super'
+# wait             — wait for device node before mounting</code></pre></div>
+    <div class="code-block"><span class="lang-tag">bash</span><button class="copy-btn" onclick="copyCode(this)">📋 Copy</button>
+      <pre><code># Verify first-stage init on a running device
+adb shell ls -la /dev/block/by-name/ | head -20        # Check device nodes
+adb shell cat /proc/cmdline | tr ' ' '\n' | grep androidboot  # Boot params
+adb shell cat /proc/mounts | grep dm-                   # dm-verity active?
+adb shell dmctl list devices                             # Device-mapper targets
+adb shell dmesg | grep -E "init:|fs_mgr|verity" | head -30  # Boot logs
+adb shell getenforce                                     # SELinux enforcing?
+adb shell ps -p 1 -o comm=                               # PID 1 is init?</code></pre></div>
   </section>
-
-  <section class="section">
-    <h2><span class="s-icon">📖</span> References</h2>
+  <section class="section" aria-label="References"><h2><span class="s-icon">📖</span> References</h2>
     <ul class="ref-list">
-      <li>📄 <a href="https://source.android.com/docs/core/architecture/configuration/init" target="_blank" rel="noopener">AOSP — Init</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/configuration/init" target="_blank" rel="noopener">AOSP — Init</a> — First-stage and second-stage responsibilities</li>
       <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/README.md" target="_blank" rel="noopener">Init README (AOSP source tree)</a></li>
-      <li>📄 <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images" target="_blank" rel="noopener">AOSP — Partitions and Images</a></li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_init.cpp" target="_blank" rel="noopener">first_stage_init.cpp</a> — First-stage entry point</li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/first_stage_mount.cpp" target="_blank" rel="noopener">first_stage_mount.cpp</a> — fstab, dm targets, early mounts</li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/ueventd.cpp" target="_blank" rel="noopener">ueventd.cpp</a> — Device node creation</li>
+      <li>📄 <a href="https://android.googlesource.com/platform/system/core/+/refs/heads/main/init/selinux.cpp" target="_blank" rel="noopener">selinux.cpp</a> — SELinux policy load during first stage</li>
+      <li>📄 <a href="https://source.android.com/docs/core/architecture/bootloader/partitions-images" target="_blank" rel="noopener">AOSP — Partitions and Images</a> — fstab format</li>
+      <li>📄 <a href="https://source.android.com/docs/security/features/verifiedboot/dm-verity" target="_blank" rel="noopener">AOSP — dm-verity</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">AOSP — A/B System Updates</a></li>
+      <li>📄 <a href="https://source.android.com/docs/core/ota/dynamic_partitions" target="_blank" rel="noopener">AOSP — Dynamic Partitions</a></li>
     </ul>
   </section>
 </main>
-
 <nav class="page-nav" aria-label="Page navigation">
   <a href="kernel.html">← Previous: Kernel</a>
   <a href="avb.html">Next: AVB →</a>
 </nav>
-
 <footer><p>AOSP Boot Sequence — Deep Dive · <a href="../index.html">Back to Overview</a></p></footer>
-
 <script>
 (function(){
 "use strict";
 const steps=Array.from(document.querySelectorAll('.step-item'));let idx=-1,playing=false,timer=null;
 function show(i){if(i>=0&&i<steps.length)steps[i].classList.add('visible')}
 function hide(i){if(i>=0&&i<steps.length)steps[i].classList.remove('visible')}
-window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,800)})()};
+window.animPlay=function(){if(playing)return;playing=true;(function t(){if(!playing)return;if(idx>=steps.length-1){playing=false;return}idx++;show(idx);timer=setTimeout(t,1000)})()};
 window.animReset=function(){playing=false;clearTimeout(timer);steps.forEach((_,i)=>hide(i));idx=-1};
-const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.3});
+const obs=new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting&&idx<0){animPlay();obs.disconnect()}})},{threshold:.2});
 const f=document.getElementById('stepFlow');if(f)obs.observe(f);
 window.toggleHC=function(){document.body.classList.toggle('hc')};
-window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='✅ Copied!';setTimeout(()=>b.textContent='📋 Copy',1500)})};
+window.copyCode=function(b){const p=b.parentElement.querySelector('pre');navigator.clipboard.writeText(p.textContent).then(()=>{b.textContent='\u2705 Copied!';setTimeout(()=>b.textContent='\ud83d\udccb Copy',1500)})};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')window.location.href='../index.html#init';if(e.key==='h'||e.key==='H')toggleHC()});
 })();
 </script>
