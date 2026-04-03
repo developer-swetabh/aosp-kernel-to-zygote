@@ -35,16 +35,6 @@ header{text-align:center;padding:2rem 1rem 1rem;position:relative;z-index:10}
 header h1{font-size:1.8rem;font-weight:700;letter-spacing:.02em}
 header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 
-/* ──────────────────────────── Controls ──────────────────────────────── */
-.controls{display:flex;justify-content:center;gap:.6rem;flex-wrap:wrap;padding:.8rem 1rem;position:sticky;top:0;z-index:100;background:var(--bg);border-bottom:1px solid rgba(255,255,255,.08)}
-.controls button{cursor:pointer;border:1px solid rgba(255,255,255,.15);background:var(--bg2);color:var(--text);padding:.45rem 1rem;border-radius:6px;font-size:.85rem;transition:all .15s}
-.controls button:hover,.controls button:focus-visible{background:#334155;outline:none;border-color:rgba(255,255,255,.3)}
-.controls button.active{background:#2563eb;border-color:#3b82f6}
-.controls .speed-group{display:flex;align-items:center;gap:.3rem;margin-left:.6rem}
-.controls .speed-group label{font-size:.8rem;color:var(--text-dim)}
-.controls .speed-group input[type=range]{width:80px;accent-color:#3b82f6}
-.step-counter{font-size:.8rem;color:var(--text-dim);margin-left:.8rem;align-self:center;min-width:80px;text-align:center}
-
 /* ──────────────────────────── Legend ────────────────────────────────── */
 .legend{display:flex;justify-content:center;gap:1rem;flex-wrap:wrap;padding:.6rem 1rem;font-size:.75rem;color:var(--text-dim)}
 .legend-item{display:flex;align-items:center;gap:.3rem}
@@ -57,8 +47,8 @@ header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 .block{
   position:relative;border-radius:var(--radius);padding:1rem 1.2rem;
   border:2px solid;margin-bottom:0;
-  opacity:0;transform:translateY(24px) scale(.97);
-  transition:opacity .5s cubic-bezier(.4,0,.2,1),transform .5s cubic-bezier(.4,0,.2,1),box-shadow .3s;
+  opacity:1;transform:translateY(0) scale(1);
+  transition:box-shadow .3s,filter .2s;
   cursor:default;
 }
 .block[data-deepdive]{cursor:pointer}
@@ -86,23 +76,16 @@ header p{color:var(--text-dim);margin-top:.4rem;font-size:.95rem}
 .block.bootimg{background:var(--c-bootimg);border-color:var(--c-bootimg-border);color:#fff}
 
 /* ──────────────────────────── Arrows / connectors ───────────────────── */
-.arrow-container{display:flex;justify-content:center;align-items:center;height:48px;position:relative;opacity:0;transition:opacity .4s}
-.arrow-container.visible{opacity:1}
+.arrow-container{display:flex;justify-content:center;align-items:center;height:48px;position:relative;opacity:1}
 .arrow-shaft{width:3px;height:28px;background:var(--text-dim);position:relative}
 .arrow-shaft::after{content:'';position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);border-left:7px solid transparent;border-right:7px solid transparent;border-top:8px solid var(--text-dim)}
 .arrow-label{position:absolute;right:calc(50% + 24px);font-size:.7rem;color:var(--text-dim);white-space:nowrap;background:var(--bg);padding:0 .4rem;border-radius:3px}
-.arrow-shaft.animated{animation:arrow-pulse .6s ease-out}
-@keyframes arrow-pulse{0%{background:#60a5fa;transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1.1)}100%{background:var(--text-dim);transform:scaleY(1)}}
 
 /* ──────────────────────────── Branch ────────────────────────────────── */
 .branch{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-bottom:0}
 .branch-label{text-align:center;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:.2rem 0}
 .branch-label.pass{color:#66bb6a}
 .branch-label.failb{color:#ef5350}
-
-/* ──────────────────────────── Progress bar ──────────────────────────── */
-.progress-track{position:fixed;top:0;left:0;height:3px;width:100%;z-index:200;background:rgba(255,255,255,.05)}
-.progress-bar{height:100%;background:linear-gradient(90deg,#2e7d32,#c62828,#e65100,#1565c0,#6a1b9a,#00695c);width:0;transition:width .4s}
 
 /* ──────────────────────────── Tooltip ───────────────────────────────── */
 .tooltip{position:absolute;top:0;right:-12px;transform:translateX(100%);background:#1e293b;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:.8rem 1rem;font-size:.78rem;color:var(--text);width:260px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s;box-shadow:var(--shadow);line-height:1.55}
@@ -116,7 +99,7 @@ footer a{color:#60a5fa}
 
 /* ──────────────────────────── Print ─────────────────────────────────── */
 @media print{
-  .controls,.progress-track,.legend{display:none}
+  .legend{display:none}
   .block{opacity:1!important;transform:none!important;break-inside:avoid}
   .arrow-container{opacity:1!important}
   body{background:#fff;color:#000}
@@ -127,29 +110,10 @@ footer a{color:#60a5fa}
 </head>
 <body>
 
-<!-- Progress Bar -->
-<div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
-
 <header>
   <h1>🔄 AOSP Boot Sequence — ABL&nbsp;→&nbsp;Zygote</h1>
-  <p>Animated call-flow block diagram &middot; Android Open Source Project</p>
+  <p>Call-flow block diagram &middot; Android Open Source Project</p>
 </header>
-
-<!-- Controls -->
-<nav class="controls" role="toolbar" aria-label="Animation controls">
-  <button id="btnPlay" onclick="play()" aria-label="Play animation" title="Play (Space)">▶ Play</button>
-  <button id="btnPause" onclick="pause()" aria-label="Pause animation" title="Pause (Space)">⏸ Pause</button>
-  <button id="btnReset" onclick="reset()" aria-label="Reset animation" title="Reset (R)">↺ Reset</button>
-  <button id="btnPrev" onclick="stepPrev()" aria-label="Previous step" title="Previous (←)">◀ Prev</button>
-  <button id="btnNext" onclick="stepNext()" aria-label="Next step" title="Next (→)">▶ Next</button>
-  <button id="btnShowAll" onclick="showAll()" aria-label="Show all steps" title="Show all (A)">⊞ Show All</button>
-  <div class="speed-group">
-    <label for="speedSlider">Speed</label>
-    <input type="range" id="speedSlider" min="0.3" max="3" step="0.1" value="1" oninput="setSpeed(this.value)" aria-label="Animation speed">
-  </div>
-  <span class="step-counter" id="stepCounter">0 / 0</span>
-  <button id="btnHC" onclick="toggleHC()" aria-label="Toggle high contrast" title="High contrast (H)">◑ Contrast</button>
-</nav>
 
 <!-- Legend -->
 <div class="legend" role="list" aria-label="Color legend">
@@ -431,8 +395,8 @@ footer a{color:#60a5fa}
 </main>
 
 <footer>
-  <p>AOSP Boot Sequence Diagram &middot; Sources: <a href="https://source.android.com/docs/core/architecture/bootloader" target="_blank" rel="noopener">AOSP Bootloader</a>, <a href="https://source.android.com/docs/security/features/verifiedboot/avb" target="_blank" rel="noopener">AVB 2.0</a>, <a href="https://source.android.com/docs/core/architecture/kernel" target="_blank" rel="noopener">GKI</a>, <a href="https://source.android.com/docs/security/features/selinux" target="_blank" rel="noopener">SELinux</a>, <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">A/B OTA</a></p>
-  <p style="margin-top:.3rem">Open this HTML in any modern browser. Press <kbd>Space</kbd> to play/pause, <kbd>←</kbd><kbd>→</kbd> to step, <kbd>R</kbd> to reset, <kbd>A</kbd> to show all, <kbd>H</kbd> for high contrast.</p>
+  <p>AOSP Boot Sequence Diagram | Made by Swetabh | &middot; Sources: <a href="https://source.android.com/docs/core/architecture/bootloader" target="_blank" rel="noopener">AOSP Bootloader</a>, <a href="https://source.android.com/docs/security/features/verifiedboot/avb" target="_blank" rel="noopener">AVB 2.0</a>, <a href="https://source.android.com/docs/core/architecture/kernel" target="_blank" rel="noopener">GKI</a>, <a href="https://source.android.com/docs/security/features/selinux" target="_blank" rel="noopener">SELinux</a>, <a href="https://source.android.com/docs/core/ota/ab" target="_blank" rel="noopener">A/B OTA</a></p>
+  <p style="margin-top:.3rem">Open this HTML in any modern browser. Press <kbd>H</kbd> for high contrast. Click any block to open its deep dive.</p>
 </footer>
 
 <!-- ═══════════════════════════ JAVASCRIPT ════════════════════════════ -->
@@ -442,155 +406,33 @@ footer a{color:#60a5fa}
 
 /* ── Gather elements ── */
 const blocks = Array.from(document.querySelectorAll('.block[data-step]'));
-const arrows = Array.from(document.querySelectorAll('.arrow-container[data-step]'));
-const branch = document.querySelector('.branch[data-step]');
-const progressBar = document.getElementById('progressBar');
-const stepCounter = document.getElementById('stepCounter');
-
-/* Unique ordered steps */
-const stepSet = new Set();
-blocks.forEach(b => stepSet.add(+b.dataset.step));
-arrows.forEach(a => stepSet.add(+a.dataset.step));
-const STEPS = Array.from(stepSet).sort((a,b)=>a-b);
-const TOTAL = STEPS.length;
-
-let currentIdx = -1;   /* index into STEPS; -1 = nothing shown */
-let playing = false;
-let timer = null;
-let speedMultiplier = 1;
-
-function baseDelay(){ return 1600 / speedMultiplier; }
-
-/* ── Helpers ── */
-function elementsForStep(s){
-  return [
-    ...blocks.filter(b => +b.dataset.step === s),
-    ...arrows.filter(a => +a.dataset.step === s),
-    ...(branch && +branch.dataset.step === s ? [branch] : [])
-  ];
-}
-
-function showStep(idx, animate){
-  if(idx < 0 || idx >= TOTAL) return;
-  const s = STEPS[idx];
-  elementsForStep(s).forEach(el => {
-    el.classList.add('visible');
-    if(animate){
-      const shaft = el.querySelector('.arrow-shaft');
-      if(shaft){ shaft.classList.remove('animated'); void shaft.offsetWidth; shaft.classList.add('animated'); }
-    }
-  });
-  /* highlight active */
-  blocks.forEach(b => b.classList.remove('active'));
-  blocks.filter(b => +b.dataset.step === s).forEach(b => b.classList.add('active'));
-  updateUI(idx);
-}
-
-function hideStep(idx){
-  if(idx < 0 || idx >= TOTAL) return;
-  const s = STEPS[idx];
-  elementsForStep(s).forEach(el => el.classList.remove('visible'));
-}
-
-function updateUI(idx){
-  currentIdx = idx;
-  progressBar.style.width = ((idx+1)/TOTAL*100)+'%';
-  stepCounter.textContent = (idx+1)+' / '+TOTAL;
-  /* scroll active block into view */
-  const active = blocks.filter(b => +b.dataset.step === STEPS[idx]);
-  if(active.length) active[0].scrollIntoView({behavior:'smooth',block:'center'});
-}
-
-/* ── Public API ── */
-window.play = function(){
-  if(playing) return;
-  playing = true;
-  document.getElementById('btnPlay').classList.add('active');
-  (function tick(){
-    if(!playing) return;
-    if(currentIdx >= TOTAL-1){ pause(); return; }
-    stepNext(true);
-    timer = setTimeout(tick, baseDelay());
-  })();
-};
-
-window.pause = function(){
-  playing = false;
-  clearTimeout(timer);
-  document.getElementById('btnPlay').classList.remove('active');
-};
-
-window.reset = function(){
-  pause();
-  for(let i = TOTAL-1; i >= 0; i--) hideStep(i);
-  blocks.forEach(b => b.classList.remove('active'));
-  currentIdx = -1;
-  updateUI(-1);
-  progressBar.style.width = '0';
-  stepCounter.textContent = '0 / '+TOTAL;
-};
-
-window.stepNext = function(fromPlay){
-  if(currentIdx >= TOTAL-1) return;
-  currentIdx++;
-  showStep(currentIdx, true);
-  if(!fromPlay && playing) pause();
-};
-
-window.stepPrev = function(){
-  if(currentIdx < 0) return;
-  hideStep(currentIdx);
-  /* un-highlight */
-  blocks.filter(b => +b.dataset.step === STEPS[currentIdx]).forEach(b => b.classList.remove('active'));
-  currentIdx--;
-  if(currentIdx >= 0){
-    blocks.filter(b => +b.dataset.step === STEPS[currentIdx]).forEach(b => b.classList.add('active'));
-  }
-  updateUI(currentIdx);
-  if(playing) pause();
-};
-
-window.showAll = function(){
-  pause();
-  for(let i = 0; i < TOTAL; i++) showStep(i, false);
-  blocks.forEach(b => b.classList.remove('active'));
-  currentIdx = TOTAL-1;
-  updateUI(currentIdx);
-};
-
-window.setSpeed = function(v){
-  speedMultiplier = parseFloat(v);
-};
 
 window.toggleHC = function(){
   document.body.classList.toggle('hc');
 };
 
+function focusFragment(fragment){
+  if(!fragment) return;
+  const target = blocks.find(b => b.dataset.fragment === fragment);
+  if(!target) return;
+  blocks.forEach(b => b.classList.remove('active'));
+  target.classList.add('active');
+  target.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
 /* ── Keyboard shortcuts ── */
 document.addEventListener('keydown', e => {
   if(e.target.tagName === 'INPUT') return;
   switch(e.key){
-    case ' ': e.preventDefault(); playing ? pause() : play(); break;
-    case 'ArrowRight': stepNext(); break;
-    case 'ArrowLeft': stepPrev(); break;
-    case 'r': case 'R': reset(); break;
-    case 'a': case 'A': showAll(); break;
     case 'h': case 'H': toggleHC(); break;
   }
 });
 
 /* ── Click-to-navigate deep dive ── */
-const fragmentMap = {abl:0,bootimage:1,kernel:2,init:3,avb:4,merkle:5,fail:5,slot:6,mount:7,sepolicy:8,services:9,zygote:10};
-
 blocks.forEach(b => {
   if(!b.dataset.deepdive) return;
   b.addEventListener('click', function(e){
     e.stopPropagation();
-    /* Save state */
-    try {
-      sessionStorage.setItem('aosp_boot_idx', String(currentIdx));
-      sessionStorage.setItem('aosp_boot_speed', String(speedMultiplier));
-    } catch(_){}
     window.location.href = b.dataset.deepdive + (b.dataset.fragment ? '#' + b.dataset.fragment : '');
   });
   b.addEventListener('keydown', function(e){
@@ -598,41 +440,10 @@ blocks.forEach(b => {
   });
 });
 
-/* ── Restore state on load ── */
-(function restoreState(){
-  try {
-    const savedIdx = sessionStorage.getItem('aosp_boot_idx');
-    const savedSpeed = sessionStorage.getItem('aosp_boot_speed');
-    if(savedSpeed){ speedMultiplier = parseFloat(savedSpeed); document.getElementById('speedSlider').value = savedSpeed; }
-    if(savedIdx !== null){
-      const idx = parseInt(savedIdx, 10);
-      if(idx >= 0){
-        for(let i = 0; i <= idx && i < TOTAL; i++) showStep(i, false);
-        blocks.forEach(b => b.classList.remove('active'));
-        currentIdx = idx;
-        updateUI(idx);
-      }
-      sessionStorage.removeItem('aosp_boot_idx');
-      sessionStorage.removeItem('aosp_boot_speed');
-    }
-  } catch(_){}
-  /* Fragment-based navigation */
-  if(location.hash){
-    const frag = location.hash.slice(1);
-    const targetIdx = fragmentMap[frag];
-    if(targetIdx !== undefined){
-      for(let i = 0; i <= targetIdx && i < TOTAL; i++) showStep(i, false);
-      currentIdx = targetIdx;
-      updateUI(targetIdx);
-    }
-  }
-})();
-
-/* Init counter */
-stepCounter.textContent = '0 / '+TOTAL;
+focusFragment(location.hash.slice(1));
+window.addEventListener('hashchange', () => focusFragment(location.hash.slice(1)));
 
 })();
 </script>
 </body>
 </html>
-
